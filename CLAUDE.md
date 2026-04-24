@@ -1,4 +1,4 @@
-# Base360 — Multi-tenant rental ops platform
+# PropertyOS — Multi-tenant rental ops platform
 
 **Stack:** FastAPI + React + PostgreSQL + Redis + Docker
 
@@ -36,8 +36,8 @@
 - Errors: typed only — `NotFoundError`, `TenantError` — never bare `Exception`
 
 ## Test credentials
-- Tenant A: `sunset@propertyflow.com` / `client_a_2024`
-- Tenant B: `ocean@propertyflow.com` / `client_b_2024`
+- Tenant A: `tenant-a@example.com` / `client_a_2024`
+- Tenant B: `tenant-b@example.com` / `client_b_2024`
 - Both tenants share `prop-001` by design — demonstrates cache poisoning bug
 
 ## References

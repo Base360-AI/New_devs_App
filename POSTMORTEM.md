@@ -1,4 +1,4 @@
-# Base360 — Postmortems
+# PropertyOS — Postmortems
 
 > Engineer's voice. Internal doc. Impact first, technical cause second.
 > Each entry follows the same structure: opening sentence → what the user lived through → why it happened → why we didn't catch it → what changed → what makes it impossible to repeat.
@@ -11,7 +11,7 @@
 > *"When two clients share a property ID, the revenue dashboard silently serves one client's financial data to the other — with no error, no log, and no way for either party to know it happened."*
 
 **Impact**
-Ocean Rentals logged in on a Monday morning and saw Sunset Properties' revenue figures on their own dashboard. Not an error screen — their own dashboard, their own property, confidently displaying the wrong company's money. They'd have assumed it was their data. If they caught it — by noticing a figure that looked off, or by a coincidence that let them compare — the first reaction is shock, then dread: *if I can see theirs, they can see mine*. That's not a support ticket. That's a lawyer and a GDPR subject access request. That's a Trustpilot review that other prospects read before signing. That's the end of both contracts, not one.
+Harbor Rentals logged in on a Monday morning and saw Sunrise Estates' revenue figures on their own dashboard. Not an error screen — their own dashboard, their own property, confidently displaying the wrong company's money. They'd have assumed it was their data. If they caught it — by noticing a figure that looked off, or by a coincidence that let them compare — the first reaction is shock, then dread: *if I can see theirs, they can see mine*. That's not a support ticket. That's a lawyer and a GDPR subject access request. That's a Trustpilot review that other prospects read before signing. That's the end of both contracts, not one.
 
 **Cause**
 `cache.py:17` used `revenue:{property_id}` as the cache key, assuming property IDs were globally unique — but `prop-001` is shared across tenants by design, so tenant-b's first dashboard load hit tenant-a's cached revenue and returned it as its own.
@@ -107,7 +107,7 @@ Added `location /api/ { proxy_pass http://backend:8000; }` before the `location 
 > *"When any authenticated user opens the property selector, the dropdown lists every property from every client — exposing a competitor's full portfolio on the first page of the application."*
 
 **Impact**
-Unlike the revenue cache bug, this one doesn't require a timing coincidence — it's visible on first login, every time, for every user. Ocean Rentals opens the property dropdown and sees Sunset Properties' portfolio listed alongside their own. Property names, addresses, identifiers — a competitor's full asset list, served without restriction. A prospect doing a trial sees it in the first thirty seconds. There's no way to explain this as a display glitch. It's a raw data exposure and it reads that way immediately.
+Unlike the revenue cache bug, this one doesn't require a timing coincidence — it's visible on first login, every time, for every user. Harbor Rentals opens the property dropdown and sees Sunrise Estates' portfolio listed alongside their own. Property names, addresses, identifiers — a competitor's full asset list, served without restriction. A prospect doing a trial sees it in the first thirty seconds. There's no way to explain this as a display glitch. It's a raw data exposure and it reads that way immediately.
 
 **Cause**
 `properties.py` extracted `tenant_id` from the auth token but never applied it to the database query. No `.eq("tenant_id", tenant_id)` filter. Every row in the properties table was returned to every authenticated user.
@@ -179,7 +179,7 @@ Removed `.single()`. Access changed to `data[0]` after a not-empty guard. The qu
 > *"When a user with an unrecognised email logs in, the application silently assigns them to Tenant A's account — granting a stranger full read access to a real client's revenue, properties, and booking history."*
 
 **Impact**
-Any email not in the hardcoded tenant map returns the same experience: a fully functional dashboard, populated with Sunset Properties' real financial data, with no indication that anything unusual has happened. A misconfigured test account, a social engineering attempt, a support engineer logging in with the wrong credentials — any of these land on a real client's data. The user doesn't know they're seeing the wrong account. The legitimate tenant doesn't know their data was accessed. There is no log of it happening.
+Any email not in the hardcoded tenant map returns the same experience: a fully functional dashboard, populated with Sunrise Estates' real financial data, with no indication that anything unusual has happened. A misconfigured test account, a social engineering attempt, a support engineer logging in with the wrong credentials — any of these land on a real client's data. The user doesn't know they're seeing the wrong account. The legitimate tenant doesn't know their data was accessed. There is no log of it happening.
 
 **Cause**
 `tenant_resolver.py` returned `"tenant-a"` as a silent fallback for any email not in the hardcoded lookup map. A development convenience — added so the app wouldn't break while the tenant map was being populated — was never removed and shipped as production auth logic.
@@ -323,7 +323,7 @@ Unified to the shared `core/redis_client.py` client using the same URL constant 
 > *"When the application runs in production, client email addresses and partial JWT tokens are logged unconditionally to console — appearing in Sentry, Datadog, and any other telemetry tool that captures console output."*
 
 **Impact**
-`Session User Email: sunset@propertyflow.com` and `Token preview: eyJhbGciOi...` appeared in the telemetry dashboard for every user session. Sentry and Datadog both capture `console.*` output. This means client emails and token fragments were in: every incident report, every support ticket with a session replay attached, every screenshot shared in a Slack thread, every Sentry issue linked to a stakeholder. Under GDPR, logging PII to a third-party processor without explicit consent and a DPA is a compliance violation. Under most enterprise contracts, it's a breach of the data processing agreement. The exposure wasn't a theoretical risk — it was happening on every login, every session, every day the application was running.
+`Session User Email: tenant-a@example.com` and `Token preview: eyJhbGciOi...` appeared in the telemetry dashboard for every user session. Sentry and Datadog both capture `console.*` output. This means client emails and token fragments were in: every incident report, every support ticket with a session replay attached, every screenshot shared in a Slack thread, every Sentry issue linked to a stakeholder. Under GDPR, logging PII to a third-party processor without explicit consent and a DPA is a compliance violation. Under most enterprise contracts, it's a breach of the data processing agreement. The exposure wasn't a theoretical risk — it was happening on every login, every session, every day the application was running.
 
 **Cause**
 `secureApi.ts` and auth context files called `console.log` with email addresses and JWT fragments at module level, with no environment guard and no redaction — present in every production build.

@@ -1,4 +1,4 @@
-# Base360 — Debug Challenge: Findings & Fixes
+# PropertyOS — Debug Investigation: Findings & Fixes
 
 ## The Pitch
 
@@ -35,7 +35,7 @@ before/after — no live Supabase required, just Docker and a browser.
 
 ## Bug-1: A Client Saw Another Client's Revenue
 
-**What the user experienced:** Ocean Rentals logged in and saw Sunset Properties' revenue figures — a competitor's confidential financials displayed as their own, with no error or warning.
+**What the user experienced:** Harbor Rentals logged in and saw Sunrise Estates' revenue figures — a competitor's confidential financials displayed as their own, with no error or warning.
 
 **Why it was dangerous:** This is a data breach, not a display glitch. Any client who discovers it has grounds to terminate, escalate to legal, and post publicly. Silent cross-tenant data exposure is the fastest way to lose enterprise contracts and trigger regulatory scrutiny.
 
@@ -99,7 +99,7 @@ before/after — no live Supabase required, just Docker and a browser.
 
 ## Bug-5: The Property Dropdown Showed Every Client's Properties
 
-**What the user experienced:** When selecting a property on the dashboard, the dropdown listed properties from other clients. Ocean Rentals could see — and select — Sunset Properties' portfolio.
+**What the user experienced:** When selecting a property on the dashboard, the dropdown listed properties from other clients. Harbor Rentals could see — and select — Sunrise Estates' portfolio.
 
 **Why it was dangerous:** Cross-tenant data visibility in a selector is an obvious, undeniable leak. Unlike the revenue cache bug, this one is visible on first login. A prospect doing a trial would see it immediately.
 
@@ -245,7 +245,7 @@ before/after — no live Supabase required, just Docker and a browser.
 
 **What the user experienced:** No visible symptom. This is a compliance and privacy risk — users had no idea their email addresses and partial JWT tokens were being captured by monitoring tools.
 
-**Why it was dangerous:** Sentry, Datadog, and similar tools capture `console.*` output. `Session User Email: sunset@propertyflow.com` and `Token preview: eyJhbGciOi...` appeared in these dashboards unconditionally. PII in telemetry creates GDPR exposure, violates most enterprise data processing agreements, and means credentials can appear in screenshots, support tickets, and incident reports.
+**Why it was dangerous:** Sentry, Datadog, and similar tools capture `console.*` output. `Session User Email: tenant-a@example.com` and `Token preview: eyJhbGciOi...` appeared in these dashboards unconditionally. PII in telemetry creates GDPR exposure, violates most enterprise data processing agreements, and means credentials can appear in screenshots, support tickets, and incident reports.
 
 **Root cause:** `secureApi.ts` logged emails and tokens unconditionally because debug logging had no DEV guard and no lint rule prevented it, which was never caught by a PII scan in CI, sending client credentials into third-party telemetry dashboards.
 
@@ -457,11 +457,11 @@ Final result: **89 passed, 1 skipped, 0 failed.**
 
 ## If I Had One More Week
 
-Priority order: trust restoration first, then accuracy, then features. Users don't read release notes — trust is restored through a direct conversation with Sid and the affected clients, backed by proof the system is now safe.
+Priority order: trust restoration first, then accuracy, then features. Users don't read release notes — trust is restored through a direct conversation with the client lead and the affected tenants, backed by proof the system is now safe.
 
 **Trust restoration (the client call needs these):**
 
-1. **Playwright tenant-switch E2E test** — two accounts, one browser. Assert the UI never shows cross-tenant property names, revenue, or city data after a login switch. This test would have caught Bug 1, Bug 3, the dropdown leak, and the IndexedDB persistence bug. One test, four bugs. This is the artifact Sid shows clients: *"we have an automated test that would have caught this before it shipped."*
+1. **Playwright tenant-switch E2E test** — two accounts, one browser. Assert the UI never shows cross-tenant property names, revenue, or city data after a login switch. This test would have caught Bug 1, Bug 3, the dropdown leak, and the IndexedDB persistence bug. One test, four bugs. This is the artifact the client lead shows tenants: *"we have an automated test that would have caught this before it shipped."*
 
 2. **Tenant-scope every cache key** — JWT, React Query (`buster: tenant_id`), localforage, SecureAPI in-memory. Unit test: log out tenant-a, log in as tenant-b, assert zero cross-tenant data from any layer.
 
