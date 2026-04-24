@@ -15,7 +15,7 @@ async def get_dashboard_summary(
     
     revenue_data = await get_revenue_summary(property_id, tenant_id)
     
-    total_revenue_float = float(revenue_data['total'])
+    total_revenue_float = round(float(revenue_data['total']), 2)
     
     return {
         "property_id": revenue_data['property_id'],

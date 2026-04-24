@@ -74,7 +74,7 @@ async def validate_session_endpoint(
         
         # Extract access token from request
         auth_header = http_request.headers.get("authorization")
-        access_token = None
+        access_token = ""
         if auth_header and auth_header.startswith("Bearer "):
             access_token = auth_header[7:]
         
