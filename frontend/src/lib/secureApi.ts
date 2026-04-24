@@ -11,7 +11,6 @@
 
 import { supabase } from './supabase';
 import { sessionManager } from '../utils/sessionManager';
-import { withRetry, handleApiError, classifyError } from '../utils/apiErrorHandler';
 
 // Get backend URL with fallback for misconfigured production environments
 const getBackendUrl = () => {
@@ -73,8 +72,9 @@ export class SecureAPIClient {
    */
   private interceptDirectQueries() {
     if (import.meta.env.DEV) {
-      const ENFORCE = (import.meta.env as any).VITE_ENFORCE_SECURE_API === 'true';
-      const originalFrom = supabase.from;
+      const ENFORCE = Boolean((import.meta.env as unknown as { VITE_ENFORCE_SECURE_API?: string }).VITE_ENFORCE_SECURE_API === 'true');
+      const supabaseAdapter = supabase as unknown as { from?: Function };
+      const originalFrom = supabaseAdapter.from;
       // Temporary dev allowlist for legacy direct queries while migrating to SecureAPI
       const DEV_ALLOWLIST = new Set([
         'user_permissions',
@@ -84,29 +84,31 @@ export class SecureAPIClient {
         'landlord_details'
       ]);
 
-      supabase.from = (table: string) => {
-        const stack = new Error().stack || '';
-        const violation = `SECURITY VIOLATION: Direct Supabase query to table '${table}'`;
+      if (originalFrom) {
+        supabaseAdapter.from = (table: string) => {
+          const stack = new Error().stack || '';
+          const violation = `SECURITY VIOLATION: Direct Supabase query to table '${table}'`;
 
-        if (DEV_ALLOWLIST.has(table) || !ENFORCE) {
-          // Allow in development with a clear warning when not enforcing strict mode
-          console.warn(`⚠️ Legacy direct query allowed in DEV${ENFORCE ? ' (allowlist)' : ''}:`, table);
-          if (!DEV_ALLOWLIST.has(table) && !ENFORCE) {
-            // Record violation for later review, but don't block
-            this.securityViolations.push(violation + ' (allowed in DEV)');
+          if (DEV_ALLOWLIST.has(table) || !ENFORCE) {
+            // Allow in development with a clear warning when not enforcing strict mode
+            console.warn(`⚠️ Legacy direct query allowed in DEV${ENFORCE ? ' (allowlist)' : ''}:`, table);
+            if (!DEV_ALLOWLIST.has(table) && !ENFORCE) {
+              // Record violation for later review, but don't block
+              this.securityViolations.push(violation + ' (allowed in DEV)');
+            }
+            return originalFrom.call(supabase, table);
           }
-          return originalFrom.call(supabase, table);
-        }
 
-        // Strict enforcement in DEV when VITE_ENFORCE_SECURE_API=true
-        console.error('🚨🚨🚨 ' + violation);
-        console.error('Stack trace:', stack);
-        this.securityViolations.push(violation);
-        throw new TenantIsolationError(
-          `Direct database access is forbidden! Use SecureAPI.${table}() instead. ` +
-          `This query would expose data from ALL tenants.`
-        );
-      };
+          // Strict enforcement in DEV when VITE_ENFORCE_SECURE_API=true
+          console.error('🚨🚨🚨 ' + violation);
+          console.error('Stack trace:', stack);
+          this.securityViolations.push(violation);
+          throw new TenantIsolationError(
+            `Direct database access is forbidden! Use SecureAPI.${table}() instead. ` +
+            `This query would expose data from ALL tenants.`
+          );
+        };
+      }
     }
   }
 
@@ -264,7 +266,7 @@ export class SecureAPIClient {
     let cleared = 0;
     const keysToDelete: string[] = [];
 
-    for (const [key, value] of this.requestCache.entries()) {
+    for (const key of this.requestCache.keys()) {
       if (key.includes(endpointPattern)) {
         keysToDelete.push(key);
         cleared++;
@@ -277,7 +279,7 @@ export class SecureAPIClient {
 
     // Also clear pending requests
     const pendingKeysToDelete: string[] = [];
-    for (const [key, promise] of this.pendingRequests.entries()) {
+    for (const key of this.pendingRequests.keys()) {
       if (key.includes(endpointPattern)) {
         pendingKeysToDelete.push(key);
       }
@@ -406,8 +408,7 @@ export class SecureAPIClient {
     }
 
     // Check if result looks valid for cleaning data
-    const items = data?.items || data?.data || [];
-    const total = data?.total || 0;
+    /* unused items and total */
 
     // Always cache properly structured responses, even if empty
     // Empty results can be legitimate for users without tenant access or specific date ranges
@@ -438,8 +439,7 @@ export class SecureAPIClient {
     const CLEANING_CACHE_TTL = 30000; // 30 seconds instead of 3 seconds
 
     // For cleaning endpoints, use extended cache time but validate content
-    const items = cachedData?.items || cachedData?.data || [];
-    const total = cachedData?.total || 0;
+    /* unused items and total cached */
 
     // Primary validation: check cache age with more reasonable timeout
     if (cacheAge > CLEANING_CACHE_TTL) {
@@ -492,25 +492,30 @@ export class SecureAPIClient {
 
     // Fast path
     const initial = await supabase.auth.getSession();
-    if (initial.data.session?.access_token) return initial.data.session;
+    const initialSession = initial.data.session;
+    if (initialSession?.access_token) {
+      return initialSession as unknown as import('@supabase/supabase-js').Session;
+    }
+
     const storageToken = getTokenFromStorage();
     if (storageToken) {
       // Construct a minimal session object shape with access_token
-      return { access_token: storageToken } as any;
+      return { access_token: storageToken } as unknown as import('@supabase/supabase-js').Session;
     }
 
     // Listen + poll concurrently
-    let unsubscribe: (() => void) | null = null;
+    const state = { unsubscribe: null as (() => void) | null };
     let resolved = false;
+
     const sessionPromise = new Promise<import('@supabase/supabase-js').Session | null>((resolve) => {
       const { data } = supabase.auth.onAuthStateChange((_event, session) => {
         if (!resolved && session?.access_token) {
           resolved = true;
-          if (unsubscribe) unsubscribe();
-          resolve(session);
+          if (state.unsubscribe) state.unsubscribe();
+          resolve(session as unknown as import('@supabase/supabase-js').Session);
         }
       });
-      unsubscribe = () => data.subscription.unsubscribe();
+      state.unsubscribe = () => data.subscription.unsubscribe();
     });
 
     const pollingPromise = new Promise<import('@supabase/supabase-js').Session | null>(async (resolve) => {
@@ -519,8 +524,8 @@ export class SecureAPIClient {
         const token = await nowHasToken();
         if (token) {
           resolved = true;
-          if (unsubscribe) unsubscribe();
-          resolve({ access_token: token } as any);
+          if (state.unsubscribe) state.unsubscribe();
+          resolve({ access_token: token } as unknown as import('@supabase/supabase-js').Session);
           return;
         }
         await new Promise(r => setTimeout(r, 200));
@@ -530,7 +535,7 @@ export class SecureAPIClient {
 
     const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs));
     const result = await Promise.race([sessionPromise, pollingPromise, timeoutPromise]);
-    if (unsubscribe) unsubscribe();
+    if (state.unsubscribe) state.unsubscribe();
     return result;
   }
 
@@ -1452,10 +1457,16 @@ export class SecureAPIClient {
   /**
    * Get dashboard summary with optional simulation header
    */
-  async getDashboardSummary(propertyId: string, options?: { simulatedTenant?: string, timestamp?: number }) {
+  async getDashboardSummary(propertyId: string, options?: { simulatedTenant?: string, timestamp?: number, month?: number, year?: number }) {
     const queryParams = new URLSearchParams({ property_id: propertyId });
     if (options?.timestamp) {
       queryParams.append('_t', options.timestamp.toString());
+    }
+    if (options?.month !== undefined) {
+      queryParams.append('month', options.month.toString());
+    }
+    if (options?.year !== undefined) {
+      queryParams.append('year', options.year.toString());
     }
 
     const requestOptions: RequestInit = {};
