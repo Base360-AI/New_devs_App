@@ -1,19 +1,40 @@
 from datetime import datetime
 from decimal import Decimal
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
+import pytz
 
-async def calculate_monthly_revenue(property_id: str, month: int, year: int, db_session=None) -> Decimal:
+async def get_property_timezone(property_id: str) -> str:
     """
-    Calculates revenue for a specific month.
+    Fetches the timezone for a specific property.
+    Defaults to UTC if not found in the database.
     """
-
-    start_date = datetime(year, month, 1)
-    if month < 12:
-        end_date = datetime(year, month + 1, 1)
-    else:
-        end_date = datetime(year + 1, 1, 1)
+    try:
+        from app.database import supabase
+        # Fetch timezone from properties table
+        response = supabase.table('properties').select('timezone').eq('id', property_id).execute()
+        if response.data and response.data[0].get('timezone'):
+            return response.data[0]['timezone']
+    except Exception as e:
+        print(f"DEBUG: Error fetching timezone for {property_id}: {e}")
         
-    print(f"DEBUG: Querying revenue for {property_id} from {start_date} to {end_date}")
+    return 'UTC'
+
+async def calculate_monthly_revenue(property_id: str, month: int, year: int, tenant_id: str = "default_tenant", db_session=None) -> Decimal:
+    """
+    Calculates revenue for a specific month, accounting for property timezone.
+    """
+    tz_name = await get_property_timezone(property_id)
+    local_tz = pytz.timezone(tz_name)
+    
+    local_start = local_tz.localize(datetime(year, month, 1))
+    if month < 12:
+        local_end = local_tz.localize(datetime(year, month + 1, 1))
+    else:
+        local_end = local_tz.localize(datetime(year + 1, 1, 1))
+        
+    utc_start = local_start.astimezone(pytz.UTC)
+    utc_end = local_end.astimezone(pytz.UTC)
+
 
     # SQL Simulation (This would be executed against the actual DB)
     query = """
@@ -25,8 +46,8 @@ async def calculate_monthly_revenue(property_id: str, month: int, year: int, db_
         AND check_in_date < $4
     """
     
-    # In production this query executes against a database session.
-    # result = await db.fetch_val(query, property_id, tenant_id, start_date, end_date)
+    # In production this query executes against a database session using UTC boundaries.
+    # result = await db.fetch_val(query, property_id, tenant_id, utc_start, utc_end)
     # return result or Decimal('0')
     
     return Decimal('0') # Placeholder for now until DB connection is finalized
