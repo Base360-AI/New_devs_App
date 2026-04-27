@@ -11,15 +11,18 @@ async def get_dashboard_summary(
     current_user: dict = Depends(get_current_user)
 ) -> Dict[str, Any]:
     
-    tenant_id = getattr(current_user, "tenant_id", "default_tenant") or "default_tenant"
+    # 1. Clean up the tenant fallback (Safety first)
+    tenant_id = getattr(current_user, "tenant_id", None)
+    if not tenant_id:
+        raise HTTPException(status_code=403, detail="Tenant ID missing from session")
     
+    # 2. Fetch the data (Now returns a string from your new service logic)
     revenue_data = await get_revenue_summary(property_id, tenant_id)
     
-    total_revenue_float = float(revenue_data['total'])
-    
+    # 3. Return the data AS IS (Keep the string for precision)
     return {
         "property_id": revenue_data['property_id'],
-        "total_revenue": total_revenue_float,
+        "total_revenue": revenue_data['total'], # NO FLOAT CASTING!
         "currency": revenue_data['currency'],
         "reservations_count": revenue_data['count']
     }
