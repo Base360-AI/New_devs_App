@@ -1,0 +1,16 @@
+# Local backend virtual environment
+backend/venv/
+
+# Python bytecode/cache
+**/__pycache__/
+*.py[cod]
+
+# Dependencies and generated frontend cache
+frontend/node_modules/
+frontend/.vite/
+
+# OS files
+.DS_Store
+
+# Local editor settings
+.vscode/settings.json
