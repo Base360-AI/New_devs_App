@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Dict, Any, List
 
@@ -7,11 +7,16 @@ async def calculate_monthly_revenue(property_id: str, month: int, year: int, db_
     Calculates revenue for a specific month.
     """
 
-    start_date = datetime(year, month, 1)
+    # Use timezone-aware UTC datetimes so Postgres compares them correctly
+    # against TIMESTAMP WITH TIME ZONE columns. Without tzinfo, Postgres
+    # interprets the value as UTC but properties in Europe/Paris or
+    # America/New_York have check-in times that straddle UTC midnight
+    # differently from local midnight, causing off-by-one-day revenue gaps.
+    start_date = datetime(year, month, 1, tzinfo=timezone.utc)
     if month < 12:
-        end_date = datetime(year, month + 1, 1)
+        end_date = datetime(year, month + 1, 1, tzinfo=timezone.utc)
     else:
-        end_date = datetime(year + 1, 1, 1)
+        end_date = datetime(year + 1, 1, 1, tzinfo=timezone.utc)
         
     print(f"DEBUG: Querying revenue for {property_id} from {start_date} to {end_date}")
 
