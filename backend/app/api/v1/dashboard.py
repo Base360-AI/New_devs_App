@@ -40,33 +40,13 @@ async def get_tenant_properties(
 
     tenant_id = getattr(current_user, "tenant_id", "default_tenant") or "default_tenant"
 
-    # Tenant-specific fallback property lists used when DB is unavailable
-    mock_properties = {
-        "tenant-a": [
-            {"id": "prop-001", "name": "Beach House Alpha"},
-            {"id": "prop-002", "name": "City Apartment Downtown"},
-            {"id": "prop-003", "name": "Country Villa Estate"},
-        ],
-        "tenant-b": [
-            {"id": "prop-001", "name": "Mountain Lodge Beta"},
-            {"id": "prop-004", "name": "Lakeside Cottage"},
-            {"id": "prop-005", "name": "Urban Loft Modern"},
-        ],
-    }
+    db_pool = DatabasePool()
+    await db_pool.initialize()
 
-    try:
-        db_pool = DatabasePool()
-        await db_pool.initialize()
-
-        if db_pool.session_factory:
-            async with db_pool.get_session() as session:
-                query = text(
-                    "SELECT id, name FROM properties WHERE tenant_id = :tenant_id ORDER BY name"
-                )
-                result = await session.execute(query, {"tenant_id": tenant_id})
-                rows = result.fetchall()
-                return {"properties": [{"id": r.id, "name": r.name} for r in rows]}
-    except Exception as e:
-        pass
-
-    return {"properties": mock_properties.get(tenant_id, [])}
+    async with db_pool.get_session() as session:
+        query = text(
+            "SELECT id, name FROM properties WHERE tenant_id = :tenant_id ORDER BY name"
+        )
+        result = await session.execute(query, {"tenant_id": tenant_id})
+        rows = result.fetchall()
+        return {"properties": [{"id": r.id, "name": r.name} for r in rows]}
