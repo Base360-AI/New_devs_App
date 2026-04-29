@@ -10,7 +10,8 @@ async def get_revenue_summary(property_id: str, tenant_id: str) -> Dict[str, Any
     """
     Fetches revenue summary, utilizing caching to improve performance.
     """
-    cache_key = f"revenue:{property_id}"
+    cache_key = f"monthly_revenue_{client_id}"
+    data = cache.get(cache_key)
     
     # Try to get from cache
     cached = await redis_client.get(cache_key)
