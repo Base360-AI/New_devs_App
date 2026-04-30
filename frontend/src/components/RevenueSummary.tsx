@@ -8,14 +8,33 @@ interface RevenueData {
     reservations_count: number;
 }
 
+interface MonthlyRevenueData {
+    property_id: string;
+    month: number;
+    year: number;
+    total_revenue: number;
+    currency: string;
+    reservations_count: number;
+}
+
 interface RevenueSummaryProps {
     propertyId?: string;
-    debugTenant?: string; 
+    debugTenant?: string;
     showRaw?: boolean;
 }
 
+const MONTH_NAMES = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December',
+];
+
+// Hard-coded to the only month the seed data covers.
+const FOCUS_MONTH = 3;
+const FOCUS_YEAR = 2024;
+
 export const RevenueSummary: React.FC<RevenueSummaryProps> = ({ propertyId = 'prop-001', debugTenant, showRaw }) => {
     const [data, setData] = useState<RevenueData | null>(null);
+    const [monthlyData, setMonthlyData] = useState<MonthlyRevenueData | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
 
@@ -24,14 +43,17 @@ export const RevenueSummary: React.FC<RevenueSummaryProps> = ({ propertyId = 'pr
     useEffect(() => {
         const fetchRevenue = async () => {
             setLoading(true);
+            setError('');
             try {
-                // Use SecureAPI to handle authentication automatically
-                // We pass the simulatedTenant option which SecureAPI will attach as a header
-                const response = await SecureAPI.getDashboardSummary(propertyId, {
-                    simulatedTenant: activeTenant,
-                    timestamp: Date.now()
-                });
-                setData(response);
+                const [summary, monthly] = await Promise.all([
+                    SecureAPI.getDashboardSummary(propertyId, {
+                        simulatedTenant: activeTenant,
+                        timestamp: Date.now(),
+                    }),
+                    SecureAPI.getMonthlyRevenue(propertyId, FOCUS_MONTH, FOCUS_YEAR),
+                ]);
+                setData(summary);
+                setMonthlyData(monthly);
             } catch (err) {
                 setError('Failed to load revenue data');
                 console.error(err);
@@ -101,6 +123,20 @@ export const RevenueSummary: React.FC<RevenueSummaryProps> = ({ propertyId = 'pr
                         <p className="text-sm font-semibold text-gray-700 mt-1">{data.reservations_count} <span className="font-normal text-gray-400">bookings</span></p>
                     </div>
                 </div>
+
+                {monthlyData && (
+                    <div className="mt-4 pt-4 border-t border-gray-100">
+                        <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">{MONTH_NAMES[monthlyData.month - 1]} {monthlyData.year} Revenue</p>
+                        <div className="flex items-baseline gap-2 mt-1">
+                            <span className="text-xl font-semibold text-gray-900">
+                                {monthlyData.currency} {monthlyData.total_revenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </span>
+                            <span className="text-xs text-gray-500">
+                                ({monthlyData.reservations_count} bookings)
+                            </span>
+                        </div>
+                    </div>
+                )}
 
                 {/* Precision Warning Area */}
                 <div className="mt-4 h-6">

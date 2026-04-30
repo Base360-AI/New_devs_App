@@ -1,0 +1,15 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Local debugging artifacts
+.workflow/
+patches/
+messages/
+
+# Editor / OS
+.DS_Store
+*.swp
+*.swo

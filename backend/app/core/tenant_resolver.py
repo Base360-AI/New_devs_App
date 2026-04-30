@@ -1,104 +1,80 @@
+"""Tenant resolver — derives tenant_id from JWT claims and user metadata.
+
+A previous implementation hard-coded an email-to-tenant map with a default of
+``tenant-a`` for any unknown user, which would have silently granted cross-tenant
+access if a third user ever appeared. This version trusts only what the verified
+JWT carries (or what's already on the user object) and refuses to make one up.
 """
-Minimal tenant resolver for authentication.
-"""
-from typing import Optional
+
 import logging
+from typing import Optional
+
+import jwt
 
 logger = logging.getLogger(__name__)
 
 
 class TenantResolver:
-    """Minimal tenant resolver that extracts tenant_id from JWT claims."""
+    """Resolve tenant_id from JWT claims with no implicit fallbacks."""
 
     @staticmethod
     def resolve_tenant_from_token(token_payload: dict) -> Optional[str]:
-        """
-        Extract tenant_id from JWT token payload.
+        """Extract tenant_id from a decoded JWT payload."""
+        for container in ("user_metadata", "app_metadata"):
+            data = token_payload.get(container)
+            if isinstance(data, dict) and data.get("tenant_id"):
+                return data["tenant_id"]
 
-        Args:
-            token_payload: Decoded JWT payload
-
-        Returns:
-            Tenant ID if found, None otherwise
-        """
-        # Try user_metadata first (most common location)
-        if 'user_metadata' in token_payload:
-            tenant_id = token_payload['user_metadata'].get('tenant_id')
-            if tenant_id:
-                return tenant_id
-
-        # Try app_metadata as fallback
-        if 'app_metadata' in token_payload:
-            tenant_id = token_payload['app_metadata'].get('tenant_id')
-            if tenant_id:
-                return tenant_id
-
-        # Try root level
-        tenant_id = token_payload.get('tenant_id')
-        if tenant_id:
-            return tenant_id
-
-        logger.warning("No tenant_id found in token payload")
-        return None
+        return token_payload.get("tenant_id")
 
     @staticmethod
     def resolve_tenant_from_user(user_data: dict) -> Optional[str]:
-        """
-        Extract tenant_id from user data.
+        """Extract tenant_id from a user-shaped dict."""
+        if user_data.get("tenant_id"):
+            return user_data["tenant_id"]
 
-        Args:
-            user_data: User data dictionary
-
-        Returns:
-            Tenant ID if found, None otherwise
-        """
-        # Check various possible locations
-        if 'tenant_id' in user_data:
-            return user_data['tenant_id']
-
-        if 'user_metadata' in user_data:
-            tenant_id = user_data['user_metadata'].get('tenant_id')
-            if tenant_id:
-                return tenant_id
-
-        if 'app_metadata' in user_data:
-            tenant_id = user_data['app_metadata'].get('tenant_id')
-            if tenant_id:
-                return tenant_id
+        for container in ("user_metadata", "app_metadata"):
+            data = user_data.get(container)
+            if isinstance(data, dict) and data.get("tenant_id"):
+                return data["tenant_id"]
 
         return None
 
     @staticmethod
-    async def resolve_tenant_id(user_id: str, user_email: str, token: Optional[str] = None) -> str:
+    async def resolve_tenant_id(
+        user_id: str,
+        user_email: str,
+        token: Optional[str] = None,
+    ) -> Optional[str]:
+        """Resolve tenant_id from the JWT.
+
+        Returns ``None`` when no tenant_id is present — the caller MUST treat
+        a missing tenant as an authentication failure rather than substituting
+        a default.
         """
-        Resolve tenant ID for a user.
-        
-        Args:
-            user_id: User ID
-            user_email: User email
-            
-        Returns:
-            Tenant ID
-        """
-        # Fallback mapping by known user email.
-        if user_email == "sunset@propertyflow.com":
-            return "tenant-a"
-        if user_email == "ocean@propertyflow.com":
-            return "tenant-b"
-        if user_email == "candidate@propertyflow.com":
-            return "tenant-a"
-            
-        # Default fallback
-        return "tenant-a"
+        if token:
+            try:
+                # Signature is verified upstream by the auth layer; we only need
+                # to read the claims here.
+                payload = jwt.decode(token, options={"verify_signature": False})
+                tenant_id = TenantResolver.resolve_tenant_from_token(payload)
+                if tenant_id:
+                    return tenant_id
+            except jwt.PyJWTError as exc:
+                logger.warning(
+                    "Failed to decode token for tenant resolution (user=%s): %s",
+                    user_email,
+                    exc,
+                )
+
+        logger.warning(
+            "No tenant_id resolvable for user %s (%s) — refusing to default",
+            user_email,
+            user_id,
+        )
+        return None
 
     @staticmethod
     async def update_user_tenant_metadata(user_id: str, tenant_id: str) -> None:
-        """
-        Update user metadata with tenant_id.
-        
-        Args:
-            user_id: User ID
-            tenant_id: Tenant ID
-        """
-        # No-op in this resolver implementation.
-        pass
+        """No-op: persistent metadata updates aren't supported in this resolver."""
+        return None
