@@ -25,6 +25,7 @@ services:
       - "3000:80" # Mapping internal 80 (nginx) to 3000
     environment:
       - VITE_API_URL=http://localhost:8000
+      - VITE_BACKEND_URL=http://localhost:8000
     depends_on:
       - backend
 
