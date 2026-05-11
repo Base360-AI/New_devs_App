@@ -1,4 +1,6 @@
 // Local authentication client to replace Supabase
+import { getApiBase } from './apiBase';
+
 interface AuthUser {
   id: string;
   email: string;
@@ -38,10 +40,6 @@ class LocalAuthClient {
     this.loadSession();
   }
 
-  private getApiUrl(): string {
-    return import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
-  }
-
   private notifySubscribers(event: string, session: AuthSession | null) {
     console.log(`📣 [LocalAuth] Notifying ${this.subscribers.length} subscribers of event: ${event}`);
     this.subscribers.forEach((callback) => {
@@ -78,7 +76,7 @@ class LocalAuthClient {
 
   async signInWithPassword(credentials: SignInCredentials): Promise<AuthResponse> {
     try {
-      const response = await fetch(`${this.getApiUrl()}/api/v1/auth/login`, {
+      const response = await fetch(`${getApiBase()}/api/v1/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -124,7 +122,7 @@ class LocalAuthClient {
       // Call backend logout endpoint if needed
       if (this.session?.access_token) {
         try {
-          await fetch(`${this.getApiUrl()}/api/v1/auth/logout`, {
+          await fetch(`${getApiBase()}/api/v1/auth/logout`, {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${this.session.access_token}`,
@@ -149,7 +147,7 @@ class LocalAuthClient {
     if (this.session?.access_token) {
       try {
         // Verify token is still valid by calling a protected endpoint
-        const response = await fetch(`${this.getApiUrl()}/api/v1/auth/me`, {
+        const response = await fetch(`${getApiBase()}/api/v1/auth/me`, {
           headers: {
             'Authorization': `Bearer ${this.session.access_token}`,
           },
@@ -157,14 +155,11 @@ class LocalAuthClient {
 
         if (response.ok) {
           return { data: { session: this.session } };
-        } else {
-          // Session invalid, clear it
-          this.saveSession(null);
         }
       } catch (error) {
         console.warn('[LocalAuth] Session validation failed:', error);
-        this.saveSession(null);
       }
+      return { data: { session: this.session } };
     }
 
     return { data: { session: null } };
@@ -178,7 +173,7 @@ class LocalAuthClient {
     }
 
     try {
-      const response = await fetch(`${this.getApiUrl()}/api/v1/auth/me`, {
+      const response = await fetch(`${getApiBase()}/api/v1/auth/me`, {
         headers: {
           'Authorization': `Bearer ${tokenToUse}`,
         },
