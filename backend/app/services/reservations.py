@@ -17,7 +17,7 @@ async def calculate_monthly_revenue(property_id: str, month: int, year: int, db_
 
     # SQL Simulation (This would be executed against the actual DB)
     query = """
-        SELECT SUM(total_amount) as total
+        SELECT SUM(total_amount::numeric) as total
         FROM reservations
         WHERE property_id = $1
         AND tenant_id = $2
