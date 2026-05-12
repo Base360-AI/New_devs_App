@@ -1450,6 +1450,25 @@ export class SecureAPIClient {
 
   // ============= DASHBOARD API =============
   /**
+   * Get dashboard properties
+   */
+  async getDashboardProperties(options?: { simulatedTenant?: string, timestamp?: number }) {
+    const queryParams = new URLSearchParams();
+    if (options?.timestamp) {
+      queryParams.append('_t', options.timestamp.toString());
+    }
+
+    const requestOptions: RequestInit = {};
+    if (options?.simulatedTenant) {
+      requestOptions.headers = {
+        'X-Simulated-Tenant': options.simulatedTenant
+      };
+    }
+
+    return this.request<any>(`/api/v1/dashboard/properties?${queryParams}`, requestOptions);
+  }
+
+  /**
    * Get dashboard summary with optional simulation header
    */
   async getDashboardSummary(propertyId: string, options?: { simulatedTenant?: string, timestamp?: number }) {
