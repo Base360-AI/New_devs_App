@@ -1,16 +1,41 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { RevenueSummary } from "./RevenueSummary";
+import { SecureAPI } from "../lib/secureApi";
 
-const PROPERTIES = [
-  { id: 'prop-001', name: 'Beach House Alpha' },
-  { id: 'prop-002', name: 'City Apartment Downtown' },
-  { id: 'prop-003', name: 'Country Villa Estate' },
-  { id: 'prop-004', name: 'Lakeside Cottage' },
-  { id: 'prop-005', name: 'Urban Loft Modern' }
-];
+const REPORT_MONTH = 3;
+const REPORT_YEAR = 2024;
+
+interface DashboardProperty {
+  id: string;
+  name: string;
+  timezone: string;
+}
 
 const Dashboard: React.FC = () => {
-  const [selectedProperty, setSelectedProperty] = useState('prop-001');
+  const [properties, setProperties] = useState<DashboardProperty[]>([]);
+  const [selectedProperty, setSelectedProperty] = useState('');
+  const [loadingProperties, setLoadingProperties] = useState(true);
+  const [propertyError, setPropertyError] = useState('');
+
+  useEffect(() => {
+    const fetchProperties = async () => {
+      setLoadingProperties(true);
+      setPropertyError('');
+      try {
+        const response = await SecureAPI.getDashboardProperties();
+        const tenantProperties = response.properties || [];
+        setProperties(tenantProperties);
+        setSelectedProperty(tenantProperties[0]?.id || '');
+      } catch (err) {
+        setPropertyError('Failed to load properties');
+        console.error(err);
+      } finally {
+        setLoadingProperties(false);
+      }
+    };
+
+    fetchProperties();
+  }, []);
 
   return (
     <div className="p-4 lg:p-6 min-h-full">
@@ -33,20 +58,27 @@ const Dashboard: React.FC = () => {
                 <select
                   value={selectedProperty}
                   onChange={(e) => setSelectedProperty(e.target.value)}
+                  disabled={loadingProperties || properties.length === 0}
                   className="block w-full sm:w-auto min-w-[200px] px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
                 >
-                  {PROPERTIES.map((property) => (
+                  {properties.map((property) => (
                     <option key={property.id} value={property.id}>
                       {property.name}
                     </option>
                   ))}
                 </select>
+                {loadingProperties && <p className="mt-2 text-xs text-gray-500">Loading properties...</p>}
+                {propertyError && <p className="mt-2 text-xs text-red-600">{propertyError}</p>}
               </div>
             </div>
           </div>
 
           <div className="space-y-6">
-            <RevenueSummary propertyId={selectedProperty} />
+            {selectedProperty ? (
+              <RevenueSummary propertyId={selectedProperty} month={REPORT_MONTH} year={REPORT_YEAR} />
+            ) : !loadingProperties && !propertyError ? (
+              <div className="p-4 text-gray-600 bg-gray-50 rounded-lg">No properties available.</div>
+            ) : null}
           </div>
         </div>
       </div>

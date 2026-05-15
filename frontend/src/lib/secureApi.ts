@@ -43,6 +43,34 @@ export class TenantIsolationError extends Error {
   }
 }
 
+interface DashboardProperty {
+  id: string;
+  name: string;
+  timezone: string;
+  is_fallback?: boolean;
+}
+
+interface DashboardPropertiesResponse {
+  properties: DashboardProperty[];
+  is_fallback?: boolean;
+}
+
+interface DashboardSummaryResponse {
+  property_id: string;
+  property_name: string;
+  property_timezone: string;
+  reporting_period: {
+    month: number;
+    year: number;
+    label: string;
+  };
+  total_revenue: string;
+  currency: string;
+  reservations_count: number;
+  is_fallback?: boolean;
+  fallback_reason?: string | null;
+}
+
 export class SecureAPIClient {
   private static instance: SecureAPIClient;
   private backendUrl: string;
@@ -1450,22 +1478,26 @@ export class SecureAPIClient {
 
   // ============= DASHBOARD API =============
   /**
-   * Get dashboard summary with optional simulation header
+   * Get tenant-scoped dashboard properties.
    */
-  async getDashboardSummary(propertyId: string, options?: { simulatedTenant?: string, timestamp?: number }) {
-    const queryParams = new URLSearchParams({ property_id: propertyId });
-    if (options?.timestamp) {
+  async getDashboardProperties() {
+    return this.request<DashboardPropertiesResponse>('/api/v1/dashboard/properties');
+  }
+
+  /**
+   * Get dashboard summary for a property and reporting period.
+   */
+  async getDashboardSummary(propertyId: string, options: { month: number; year: number; timestamp?: number }) {
+    const queryParams = new URLSearchParams({
+      property_id: propertyId,
+      month: String(options.month),
+      year: String(options.year),
+    });
+    if (options.timestamp) {
       queryParams.append('_t', options.timestamp.toString());
     }
 
-    const requestOptions: RequestInit = {};
-    if (options?.simulatedTenant) {
-      requestOptions.headers = {
-        'X-Simulated-Tenant': options.simulatedTenant
-      };
-    }
-
-    return this.request<any>(`/api/v1/dashboard/summary?${queryParams}`, requestOptions);
+    return this.request<DashboardSummaryResponse>(`/api/v1/dashboard/summary?${queryParams}`);
   }
 
   async uploadCompanyLogo(logo_url: string) {
