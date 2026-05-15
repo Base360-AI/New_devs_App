@@ -2,7 +2,7 @@
 type: bug
 priority: high
 created: 2026-05-15T00:00:00Z
-status: planned
+status: reviewed
 tags: [assignment, debugging, revenue, privacy, multi-tenant, caching, timezone, finance, frontend, backend]
 keywords: [ASSIGNMENT.md, revenue dashboard, Sunset Properties, Ocean Rentals, multi-tenant, tenant isolation, cache, cache key, revenue calculation, reservation, timezone, March, rounding, cents, currency, property, frontend dashboard, backend API, OpenAPI, docker compose]
 patterns: [tenant isolation, authorization checks, cache key design, cache invalidation, revenue aggregation, decimal arithmetic, timezone boundaries, month filtering, frontend stale state, API endpoint validation, seed data consistency, performance-sensitive queries]

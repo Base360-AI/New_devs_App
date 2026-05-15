@@ -148,8 +148,8 @@ Mocked data may be intentional for the test, but tenant-insensitive fallback can
 ### Success Criteria
 
 #### Automated Verification
-- [ ] Backend imports succeed: `python -m compileall app` from `backend`.
-- [ ] New service tests pass once added in Phase 4: `python -m pytest` from `backend`.
+- [x] Backend imports succeed: `python3 -m compileall app` from `backend`.
+- [x] New service tests pass once added in Phase 4: `uv run python -m pytest` from `backend`.
 
 #### Manual Verification
 - [ ] Backend starts through Docker without revenue requests falling into fallback because of missing Supabase DB settings.
@@ -230,8 +230,8 @@ The current `revenue:{property_id}` key leaks when `prop-001` exists under both 
 ### Success Criteria
 
 #### Automated Verification
-- [ ] New tests confirm cache keys differ for `tenant-a/prop-001` and `tenant-b/prop-001`.
-- [ ] New tests confirm summary responses use string totals.
+- [x] New tests confirm cache keys differ for `tenant-a/prop-001` and `tenant-b/prop-001`.
+- [x] New tests confirm summary responses use string totals.
 - [ ] New tests confirm invalid month returns a 422 or 400 response.
 
 #### Manual Verification
@@ -315,8 +315,8 @@ interface RevenueData {
 ### Success Criteria
 
 #### Automated Verification
-- [ ] Frontend builds: `npm run build` from `frontend`.
-- [ ] Frontend lint is run if practical: `npm run lint` from `frontend`.
+- [x] Frontend builds: `npm run build` from `frontend`.
+- [x] Frontend lint is run if practical: `npm run lint` from `frontend`.
 
 #### Manual Verification
 - [ ] Sunset login shows only Sunset properties: Beach House Alpha, City Apartment Downtown, Country Villa Estate.
@@ -411,10 +411,12 @@ Recommended sections:
 ### Success Criteria
 
 #### Automated Verification
-- [ ] Backend tests pass: `python -m pytest` from `backend`.
-- [ ] Backend compiles: `python -m compileall app` from `backend`.
-- [ ] Frontend builds: `npm run build` from `frontend`.
-- [ ] Frontend lint is run if practical: `npm run lint` from `frontend`.
+- [x] Backend tests pass: `uv run python -m pytest` from `backend`.
+- [x] Backend compiles: `python3 -m compileall app` from `backend`.
+- [x] Frontend builds: `npm run build` from `frontend`.
+- [x] Frontend lint is run if practical: `npm run lint` from `frontend`.
+
+Lint note: `npm run lint` was executed and failed on existing repository-wide ESLint issues, primarily `no-explicit-any` and unused variables across legacy files. A targeted lint run against the touched frontend files still reports pre-existing `secureApi.ts` issues outside the dashboard changes; `Dashboard.tsx` and `RevenueSummary.tsx` did not add new lint errors.
 
 #### Manual Verification
 - [ ] Start the stack: `docker compose up --build`.
