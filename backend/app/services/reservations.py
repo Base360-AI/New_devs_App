@@ -1,17 +1,28 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Dict, Any, List
+from zoneinfo import ZoneInfo
+
+async def _get_property_timezone(property_id: str, db_session=None) -> str:
+    """Returns the IANA timezone name for the property, defaulting to UTC."""
+    # In production: SELECT timezone FROM properties WHERE property_id = $1
+    # Hardcoded for now until DB lookup is wired up.
+    property_timezones = {
+        "prop-001": "Europe/Paris",
+        "prop-002": "America/New_York",
+    }
+    return property_timezones.get(property_id, "UTC")
 
 async def calculate_monthly_revenue(property_id: str, month: int, year: int, db_session=None) -> Decimal:
     """
     Calculates revenue for a specific month.
     """
-
-    start_date = datetime(year, month, 1)
+    tz = ZoneInfo(await _get_property_timezone(property_id, db_session))
+    start_date = datetime(year, month, 1, tzinfo=tz).astimezone(timezone.utc)
     if month < 12:
-        end_date = datetime(year, month + 1, 1)
+        end_date = datetime(year, month + 1, 1, tzinfo=tz).astimezone(timezone.utc)
     else:
-        end_date = datetime(year + 1, 1, 1)
+        end_date = datetime(year + 1, 1, 1, tzinfo=tz).astimezone(timezone.utc)
         
     print(f"DEBUG: Querying revenue for {property_id} from {start_date} to {end_date}")
 
