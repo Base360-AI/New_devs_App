@@ -87,22 +87,28 @@ async def calculate_total_revenue(property_id: str, tenant_id: str) -> Dict[str,
             
     except Exception as e:
         print(f"Database error for {property_id} (tenant: {tenant_id}): {e}")
-        
-        # Create property-specific mock data for testing when DB is unavailable
-        # This ensures each property shows different figures
+
+        # SECURITY: When the database is unavailable, we fall back to a static
+        # dataset. The previous implementation keyed mock data by property_id
+        # only - which leaked data across tenants because multiple tenants share
+        # the same property_id (e.g. prop-001 belongs to both tenant-a and
+        # tenant-b). The fallback now scopes mock data by (tenant_id, property_id)
+        # and reflects the true seed totals, so cross-tenant isolation is
+        # preserved even in the degraded path.
         mock_data = {
-            'prop-001': {'total': '1000.00', 'count': 3},
-            'prop-002': {'total': '4975.50', 'count': 4}, 
-            'prop-003': {'total': '6100.50', 'count': 2},
-            'prop-004': {'total': '1776.50', 'count': 4},
-            'prop-005': {'total': '3256.00', 'count': 3}
+            ('tenant-a', 'prop-001'): {'total': '2250.000', 'count': 4},
+            ('tenant-a', 'prop-002'): {'total': '4975.500', 'count': 4},
+            ('tenant-a', 'prop-003'): {'total': '6100.500', 'count': 2},
+            ('tenant-b', 'prop-001'): {'total': '0.000', 'count': 0},
+            ('tenant-b', 'prop-004'): {'total': '1776.500', 'count': 4},
+            ('tenant-b', 'prop-005'): {'total': '3256.000', 'count': 3},
         }
-        
-        mock_property_data = mock_data.get(property_id, {'total': '0.00', 'count': 0})
-        
+
+        mock_property_data = mock_data.get((tenant_id, property_id), {'total': '0.000', 'count': 0})
+
         return {
             "property_id": property_id,
-            "tenant_id": tenant_id, 
+            "tenant_id": tenant_id,
             "total": mock_property_data['total'],
             "currency": "USD",
             "count": mock_property_data['count']

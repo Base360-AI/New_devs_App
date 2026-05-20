@@ -14,9 +14,20 @@ class DatabasePool:
     async def initialize(self):
         """Initialize database connection pool"""
         try:
-            # Create async engine with connection pooling
-            database_url = f"postgresql+asyncpg://{settings.supabase_db_user}:{settings.supabase_db_password}@{settings.supabase_db_host}:{settings.supabase_db_port}/{settings.supabase_db_name}"
-            
+            # The Settings class exposes a single `database_url` (loaded from the
+            # DATABASE_URL env var defined in docker-compose). The previous
+            # implementation tried to read `supabase_db_user/password/host/port/name`
+            # which do not exist on Settings, so the pool initialization silently
+            # failed and the revenue service fell back to insecure mock data that
+            # ignored the tenant_id. We now use the configured database_url and
+            # rewrite the driver scheme to the asyncpg variant required by
+            # SQLAlchemy's async engine.
+            database_url = settings.database_url
+            if database_url.startswith("postgresql://"):
+                database_url = "postgresql+asyncpg://" + database_url[len("postgresql://"):]
+            elif database_url.startswith("postgres://"):
+                database_url = "postgresql+asyncpg://" + database_url[len("postgres://"):]
+
             self.engine = create_async_engine(
                 database_url,
                 poolclass=QueuePool,
