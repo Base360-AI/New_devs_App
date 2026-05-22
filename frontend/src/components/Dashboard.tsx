@@ -9,8 +9,32 @@ const PROPERTIES = [
   { id: 'prop-005', name: 'Urban Loft Modern' }
 ];
 
+const formatMonthInputValue = (year: number, month: number) =>
+  `${year}-${String(month).padStart(2, '0')}`;
+
 const Dashboard: React.FC = () => {
   const [selectedProperty, setSelectedProperty] = useState('prop-001');
+
+  const now = new Date();
+  const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1);
+  const [selectedYear, setSelectedYear] = useState(now.getFullYear());
+
+  // Cap the picker at the current month — looking at "future" revenue is
+  // never meaningful for this report.
+  const maxMonthValue = formatMonthInputValue(now.getFullYear(), now.getMonth() + 1);
+  const currentMonthValue = formatMonthInputValue(selectedYear, selectedMonth);
+
+  const handleMonthChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value;
+    if (!raw) return;
+    const [yearStr, monthStr] = raw.split('-');
+    const year = parseInt(yearStr, 10);
+    const month = parseInt(monthStr, 10);
+    if (Number.isFinite(year) && Number.isFinite(month) && month >= 1 && month <= 12) {
+      setSelectedYear(year);
+      setSelectedMonth(month);
+    }
+  };
 
   return (
     <div className="p-4 lg:p-6 min-h-full">
@@ -26,27 +50,49 @@ const Dashboard: React.FC = () => {
                   Monthly performance insights for your properties
                 </p>
               </div>
-              
-              {/* Property Selector */}
-              <div className="flex flex-col sm:items-end">
-                <label className="text-xs font-medium text-gray-700 mb-1">Select Property</label>
-                <select
-                  value={selectedProperty}
-                  onChange={(e) => setSelectedProperty(e.target.value)}
-                  className="block w-full sm:w-auto min-w-[200px] px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
-                >
-                  {PROPERTIES.map((property) => (
-                    <option key={property.id} value={property.id}>
-                      {property.name}
-                    </option>
-                  ))}
-                </select>
+
+              <div className="flex flex-col sm:flex-row sm:items-end gap-3">
+                <div className="flex flex-col">
+                  <label htmlFor="dashboard-month" className="text-xs font-medium text-gray-700 mb-1">
+                    Month
+                  </label>
+                  <input
+                    id="dashboard-month"
+                    type="month"
+                    value={currentMonthValue}
+                    max={maxMonthValue}
+                    onChange={handleMonthChange}
+                    className="block w-full sm:w-auto min-w-[160px] px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+                  />
+                </div>
+
+                <div className="flex flex-col">
+                  <label htmlFor="dashboard-property" className="text-xs font-medium text-gray-700 mb-1">
+                    Property
+                  </label>
+                  <select
+                    id="dashboard-property"
+                    value={selectedProperty}
+                    onChange={(e) => setSelectedProperty(e.target.value)}
+                    className="block w-full sm:w-auto min-w-[200px] px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+                  >
+                    {PROPERTIES.map((property) => (
+                      <option key={property.id} value={property.id}>
+                        {property.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
             </div>
           </div>
 
           <div className="space-y-6">
-            <RevenueSummary propertyId={selectedProperty} />
+            <RevenueSummary
+              propertyId={selectedProperty}
+              month={selectedMonth}
+              year={selectedYear}
+            />
           </div>
         </div>
       </div>
