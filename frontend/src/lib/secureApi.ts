@@ -1468,6 +1468,17 @@ export class SecureAPIClient {
     return this.request<any>(`/api/v1/dashboard/summary?${queryParams}`, requestOptions);
   }
 
+  /**
+   * List the authenticated tenant's properties (for the dashboard selector).
+   * Tenant scoping is enforced by the backend from the JWT.
+   */
+  async getProperties() {
+    const res = await this.request<Array<{ id: string; name: string; timezone?: string }>>(
+      '/api/v1/properties'
+    );
+    return Array.isArray(res) ? res : [];
+  }
+
   async uploadCompanyLogo(logo_url: string) {
     return this.request<any>('/api/v1/company-settings/logo', {
       method: 'POST',

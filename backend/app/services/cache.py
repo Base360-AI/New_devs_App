@@ -10,7 +10,14 @@ async def get_revenue_summary(property_id: str, tenant_id: str) -> Dict[str, Any
     """
     Fetches revenue summary, utilizing caching to improve performance.
     """
-    cache_key = f"revenue:{property_id}"
+    # The cache key MUST be scoped per tenant. Property IDs are only unique
+    # *within* a tenant (database/schema.sql: PRIMARY KEY (id, tenant_id)) -- e.g.
+    # prop-001 belongs to both tenant-a and tenant-b. A tenant-less key like
+    # "revenue:{property_id}" means whichever tenant populates the cache first
+    # serves its revenue to every other tenant on a cache hit. That is the
+    # cross-tenant data leak Client B reported ("numbers that belong to another
+    # company"). Including the tenant_id isolates each tenant's cache entry.
+    cache_key = f"revenue:{tenant_id}:{property_id}"
     
     # Try to get from cache
     cached = await redis_client.get(cache_key)
