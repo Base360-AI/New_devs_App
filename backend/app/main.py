@@ -28,6 +28,7 @@ from .api.v1 import (
     health,
     persistent_auth,
     dashboard,
+    properties,
     login,
 )
 
@@ -183,6 +184,7 @@ app.include_router(profile.router, prefix="/api/v1", tags=["profile"])
 
 # Dashboard
 app.include_router(dashboard.router, prefix="/api/v1", tags=["dashboard"])
+app.include_router(properties.router, prefix="/api/v1", tags=["properties"])
 
 # Bootstrap & Settings (for AppContext)
 app.include_router(company_settings.router, prefix="/api/v1", tags=["company-settings"])
