@@ -1,6 +1,5 @@
 import asyncio
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.pool import QueuePool
 import logging
 from ..config import settings
 
@@ -24,7 +23,10 @@ class DatabasePool:
             
             self.engine = create_async_engine(
                 database_url,
-                poolclass=QueuePool,
+                # No explicit poolclass: async engines default to
+                # AsyncAdaptedQueuePool. The sync QueuePool is incompatible with
+                # an asyncio engine and raised "QueuePool cannot be used with
+                # asyncio engine" on init.
                 pool_size=20,  # Number of connections to maintain
                 max_overflow=30,  # Additional connections when needed
                 pool_pre_ping=True,  # Validate connections
@@ -50,8 +52,15 @@ class DatabasePool:
         if self.engine:
             await self.engine.dispose()
     
-    async def get_session(self) -> AsyncSession:
-        """Get database session from pool"""
+    def get_session(self) -> AsyncSession:
+        """Get database session from pool.
+
+        Returns the AsyncSession directly (not a coroutine) so callers can use
+        `async with db_pool.get_session() as session`. Declaring this `async def`
+        made it return a coroutine, which is not an async context manager, so
+        every `async with` raised TypeError and the revenue query fell through
+        to mock data.
+        """
         if not self.session_factory:
             raise Exception("Database pool not initialized")
         return self.session_factory()
