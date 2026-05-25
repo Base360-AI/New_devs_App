@@ -14,8 +14,13 @@ class DatabasePool:
     async def initialize(self):
         """Initialize database connection pool"""
         try:
-            # Create async engine with connection pooling
-            database_url = f"postgresql+asyncpg://{settings.supabase_db_user}:{settings.supabase_db_password}@{settings.supabase_db_host}:{settings.supabase_db_port}/{settings.supabase_db_name}"
+            # Create async engine with connection pooling.
+            # Build the URL from the configured database_url (set via the
+            # DATABASE_URL env var) rather than non-existent supabase_db_*
+            # settings, which raised AttributeError and silently forced every
+            # revenue query onto mock fallback data. asyncpg needs the
+            # postgresql+asyncpg:// driver prefix.
+            database_url = settings.database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
             
             self.engine = create_async_engine(
                 database_url,
