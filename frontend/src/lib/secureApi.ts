@@ -1468,6 +1468,26 @@ export class SecureAPIClient {
     return this.request<any>(`/api/v1/dashboard/summary?${queryParams}`, requestOptions);
   }
 
+  // ============= DASHBOARD API =============
+  /**
+   * Get dashboard summary with optional simulation header (V2!)
+   */
+  async getDashboardSummaryV2(propertyId: string, options?: { simulatedTenant?: string, timestamp?: number }) {
+    const queryParams = new URLSearchParams({ property_id: propertyId });
+    if (options?.timestamp) {
+      queryParams.append('_t', options.timestamp.toString());
+    }
+
+    const requestOptions: RequestInit = {};
+    if (options?.simulatedTenant) {
+      requestOptions.headers = {
+        'X-Simulated-Tenant': options.simulatedTenant
+      };
+    }
+
+    return this.request<any>(`/api/v2/dashboard/summary?${queryParams}`, requestOptions);
+  }
+
   async uploadCompanyLogo(logo_url: string) {
     return this.request<any>('/api/v1/company-settings/logo', {
       method: 'POST',

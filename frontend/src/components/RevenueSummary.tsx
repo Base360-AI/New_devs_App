@@ -27,7 +27,7 @@ export const RevenueSummary: React.FC<RevenueSummaryProps> = ({ propertyId = 'pr
             try {
                 // Use SecureAPI to handle authentication automatically
                 // We pass the simulatedTenant option which SecureAPI will attach as a header
-                const response = await SecureAPI.getDashboardSummary(propertyId, {
+                const response = await SecureAPI.getDashboardSummaryV2(propertyId, {
                     simulatedTenant: activeTenant,
                     timestamp: Date.now()
                 });
