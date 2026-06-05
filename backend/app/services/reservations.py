@@ -19,10 +19,13 @@ async def calculate_monthly_revenue(property_id: str, month: int, year: int, db_
     query = """
         SELECT SUM(total_amount) as total
         FROM reservations
-        WHERE property_id = $1
-        AND tenant_id = $2
-        AND check_in_date >= $3
-        AND check_in_date < $4
+        JOIN properties p 
+            ON p.id = reservations.property_id 
+            AND p.tenant_id = reservations.tenant_id
+        WHERE reservations.property_id = $1
+        AND reservations.tenant_id = $2
+        AND (check_in_date AT TIME ZONE p.timezone) >= $3
+        AND (check_in_date AT TIME ZONE p.timezone) < $4
     """
     
     # In production this query executes against a database session.

@@ -1,0 +1,7 @@
+# Initial thoughts
+- First red flag: Properties with same id (not actually a PK) but different tenant. Tenant check forgotten somewhere? Correct assumption. Cache key forgot tenant_id, shared cache hits across property_ids, cross tenant. Slight correction: Missed `PRIMARY KEY (id, tenant_id)` before, so DB schema *is* fine.
+- Second red flag: Off by a few cents -> amounts stored in DB with sub-cent precision - good. Possibly incorrectly handled by backend or frontend?
+- Wrong data for march: Frontend shows $1000 which matches revenue from batched insert statement. But separate insert into for tenant a is not taken into account. ID references timezone which could be the culprit, especially since the check in was during a leap year on feb. 29th right before midnight. Need to investigate! Bug was indeed SQL query not being tz aware. Updated the query and validated in docker shell using psql directly!
+
+# Docker issues(?)
+- Trying to see if the caching issue is resolved, I stumbled across the following: The data I am seeing in the dashboard is not coming from the DB and just happened to match the seed. It was also identical for both tenants which I had thought was due to the caching issue, but now I realize, upon closer inspection of the docker logs, that the connection to the DB actually fails currently, and the application is returning dummy data (see `reservations.py`s Except block). Need to fix the connection to validate cache fix worked and also cent precision. Assuming revenue for tenant a will **not** be $1000 on the dot..
