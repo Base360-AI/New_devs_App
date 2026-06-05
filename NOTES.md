@@ -1,4 +1,4 @@
 # Initial thoughts
-- First red flag: Properties with same id (not actually a PK) but different tenant. Tenant check forgotten somewhere?
+- First red flag: Properties with same id (not actually a PK) but different tenant. Tenant check forgotten somewhere? Correct assumption. Cache key forgot tenant_id, shared cache hits across property_ids, cross tenant. Slight correction: Missed `PRIMARY KEY (id, tenant_id)` before, so DB schema *is* fine.
 - Second red flag: Off by a few cents -> amounts stored in DB with sub-cent precision - good. Possibly incorrectly handled by backend or frontend?
 - Wrong data for march: Frontend shows $1000 which matches revenue from batched insert statement. But separate insert into for tenant a is not taken into account. ID references timezone which could be the culprit, especially since the check in was during a leap year on feb. 29th right before midnight. Need to investigate!
