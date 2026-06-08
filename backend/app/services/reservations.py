@@ -1,35 +1,44 @@
-from datetime import datetime
 from decimal import Decimal
-from typing import Dict, Any, List
+from typing import Dict, Any
 
-async def calculate_monthly_revenue(property_id: str, month: int, year: int, db_session=None) -> Decimal:
-    """
-    Calculates revenue for a specific month.
-    """
 
-    start_date = datetime(year, month, 1)
-    if month < 12:
-        end_date = datetime(year, month + 1, 1)
-    else:
-        end_date = datetime(year + 1, 1, 1)
-        
-    print(f"DEBUG: Querying revenue for {property_id} from {start_date} to {end_date}")
-
-    # SQL Simulation (This would be executed against the actual DB)
-    query = """
-        SELECT SUM(total_amount) as total
-        FROM reservations
-        WHERE property_id = $1
-        AND tenant_id = $2
-        AND check_in_date >= $3
-        AND check_in_date < $4
+async def calculate_monthly_revenue(property_id: str, tenant_id: str, month: int, year: int) -> Decimal:
     """
-    
-    # In production this query executes against a database session.
-    # result = await db.fetch_val(query, property_id, tenant_id, start_date, end_date)
-    # return result or Decimal('0')
-    
-    return Decimal('0') # Placeholder for now until DB connection is finalized
+    Calculates revenue for a specific month, bucketed in the property's LOCAL timezone.
+
+    The month boundaries are derived from the property's timezone directly in SQL:
+    `make_timestamp(year, month, 1, 0, 0, 0) AT TIME ZONE p.timezone` turns local
+    midnight on the 1st into a concrete UTC instant, which is then compared against
+    the (indexed) check_in_date column. So a late-night check-in near a boundary is
+    counted in the correct local month (e.g. 23:30 UTC on Feb 29 is 00:30 on Mar 1
+    in Europe/Paris, and belongs to March). `+ interval '1 month'` rolls Dec into Jan.
+    """
+    from app.core.database_pool import DatabasePool
+    from sqlalchemy import text
+
+    db_pool = DatabasePool()
+    await db_pool.initialize()
+
+    if not db_pool.session_factory:
+        raise Exception("Database pool not available")
+
+    async with await db_pool.get_session() as session:
+        row = (await session.execute(
+            text("""
+                SELECT COALESCE(SUM(r.total_amount), 0) AS total
+                FROM reservations r
+                JOIN properties p
+                  ON p.id = r.property_id AND p.tenant_id = r.tenant_id
+                WHERE r.property_id = :property_id
+                  AND r.tenant_id = :tenant_id
+                  AND r.check_in_date >= (make_timestamp(:year, :month, 1, 0, 0, 0) AT TIME ZONE p.timezone)
+                  AND r.check_in_date <  ((make_timestamp(:year, :month, 1, 0, 0, 0) + interval '1 month') AT TIME ZONE p.timezone)
+            """),
+            {"property_id": property_id, "tenant_id": tenant_id, "year": year, "month": month},
+        )).fetchone()
+
+        # Keep money as Decimal — never cast through binary float.
+        return Decimal(str(row.total))
 
 async def calculate_total_revenue(property_id: str, tenant_id: str) -> Dict[str, Any]:
     """
