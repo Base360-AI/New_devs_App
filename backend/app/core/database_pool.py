@@ -1,6 +1,5 @@
 import asyncio
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.pool import QueuePool
 import logging
 from ..config import settings
 
@@ -14,12 +13,21 @@ class DatabasePool:
     async def initialize(self):
         """Initialize database connection pool"""
         try:
-            # Create async engine with connection pooling
-            database_url = f"postgresql+asyncpg://{settings.supabase_db_user}:{settings.supabase_db_password}@{settings.supabase_db_host}:{settings.supabase_db_port}/{settings.supabase_db_name}"
+            # Build the async engine URL from the configured DATABASE_URL. The
+            # async engine requires the asyncpg driver, so normalize the scheme
+            # (the compose file supplies a plain "postgresql://" URL).
+            database_url = settings.database_url
+            if database_url.startswith("postgresql+asyncpg://"):
+                pass
+            elif database_url.startswith("postgresql://"):
+                database_url = database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+            elif database_url.startswith("postgres://"):
+                database_url = database_url.replace("postgres://", "postgresql+asyncpg://", 1)
             
+            # Note: async engines use an async-adapted pool by default; the sync
+            # QueuePool class is not compatible with create_async_engine.
             self.engine = create_async_engine(
                 database_url,
-                poolclass=QueuePool,
                 pool_size=20,  # Number of connections to maintain
                 max_overflow=30,  # Additional connections when needed
                 pool_pre_ping=True,  # Validate connections
@@ -45,8 +53,12 @@ class DatabasePool:
         if self.engine:
             await self.engine.dispose()
     
-    async def get_session(self) -> AsyncSession:
-        """Get database session from pool"""
+    def get_session(self) -> AsyncSession:
+        """Get a database session from the pool.
+
+        Returns the AsyncSession directly (not a coroutine) so callers can use
+        it as an async context manager: `async with db_pool.get_session() as s:`.
+        """
         if not self.session_factory:
             raise Exception("Database pool not initialized")
         return self.session_factory()
