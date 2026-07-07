@@ -31,7 +31,11 @@ export const RevenueSummary: React.FC<RevenueSummaryProps> = ({ propertyId = 'pr
                     simulatedTenant: activeTenant,
                     timestamp: Date.now()
                 });
-                setData(response);
+                if (!response?.total_revenue || typeof response.total_revenue !== 'number') {
+    setError('Invalid revenue data received');
+    return;
+}
+setData(response);
             } catch (err) {
                 setError('Failed to load revenue data');
                 console.error(err);

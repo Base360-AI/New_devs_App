@@ -11,11 +11,10 @@ async def get_dashboard_summary(
     current_user: dict = Depends(get_current_user)
 ) -> Dict[str, Any]:
     
-    tenant_id = getattr(current_user, "tenant_id", "default_tenant") or "default_tenant"
-    
+    tenant_id = current_user.get("tenant_id", "default_tenant")
     revenue_data = await get_revenue_summary(property_id, tenant_id)
     
-    total_revenue_float = float(revenue_data['total'])
+    total_revenue_float = float(revenue_data['total_revenue'])
     
     return {
         "property_id": revenue_data['property_id'],
