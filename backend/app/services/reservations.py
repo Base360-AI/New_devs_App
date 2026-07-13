@@ -2,7 +2,18 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Dict, Any, List
 
-async def calculate_monthly_revenue(property_id: str, month: int, year: int, db_session=None) -> Decimal:
+# Global database pool instance (singleton)
+_db_pool_instance = None
+
+async def get_db_pool():
+    global _db_pool_instance
+    if _db_pool_instance is None:
+        from app.core.database_pool import DatabasePool
+        _db_pool_instance = DatabasePool()
+        await _db_pool_instance.initialize()
+    return _db_pool_instance
+
+async def calculate_monthly_revenue(property_id: str, tenant_id: str, month: int, year: int, db_session=None) -> Decimal:
     """
     Calculates revenue for a specific month.
     """
@@ -13,7 +24,7 @@ async def calculate_monthly_revenue(property_id: str, month: int, year: int, db_
     else:
         end_date = datetime(year + 1, 1, 1)
         
-    print(f"DEBUG: Querying revenue for {property_id} from {start_date} to {end_date}")
+    print(f"DEBUG: Querying revenue for {property_id} (tenant: {tenant_id}) from {start_date} to {end_date}")
 
     # SQL Simulation (This would be executed against the actual DB)
     query = """
@@ -36,17 +47,12 @@ async def calculate_total_revenue(property_id: str, tenant_id: str) -> Dict[str,
     Aggregates revenue from database.
     """
     try:
-        # Import database pool
-        from app.core.database_pool import DatabasePool
+        from sqlalchemy import text
         
-        # Initialize pool if needed
-        db_pool = DatabasePool()
-        await db_pool.initialize()
+        db_pool = await get_db_pool()
         
         if db_pool.session_factory:
-            async with db_pool.get_session() as session:
-                # Use SQLAlchemy text for raw SQL
-                from sqlalchemy import text
+            async with await db_pool.get_session() as session:
                 
                 query = text("""
                     SELECT 
@@ -89,16 +95,26 @@ async def calculate_total_revenue(property_id: str, tenant_id: str) -> Dict[str,
         print(f"Database error for {property_id} (tenant: {tenant_id}): {e}")
         
         # Create property-specific mock data for testing when DB is unavailable
-        # This ensures each property shows different figures
+        # This ensures each property shows different figures, ISOLATED per tenant
         mock_data = {
-            'prop-001': {'total': '1000.00', 'count': 3},
-            'prop-002': {'total': '4975.50', 'count': 4}, 
-            'prop-003': {'total': '6100.50', 'count': 2},
-            'prop-004': {'total': '1776.50', 'count': 4},
-            'prop-005': {'total': '3256.00', 'count': 3}
+            'tenant-a': {
+                'prop-001': {'total': '1000.00', 'count': 3},
+                'prop-002': {'total': '4975.50', 'count': 4},
+                'prop-003': {'total': '6100.50', 'count': 2},
+                'prop-004': {'total': '1776.50', 'count': 4},
+                'prop-005': {'total': '3256.00', 'count': 3}
+            },
+            'tenant-b': {
+                'prop-001': {'total': '2500.00', 'count': 5},
+                'prop-002': {'total': '8100.75', 'count': 6},
+                'prop-003': {'total': '4200.25', 'count': 3},
+                'prop-004': {'total': '3150.00', 'count': 2},
+                'prop-005': {'total': '1600.50', 'count': 4}
+            }
         }
         
-        mock_property_data = mock_data.get(property_id, {'total': '0.00', 'count': 0})
+        tenant_mock = mock_data.get(tenant_id, {})
+        mock_property_data = tenant_mock.get(property_id, {'total': '0.00', 'count': 0})
         
         return {
             "property_id": property_id,
