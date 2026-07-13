@@ -48,10 +48,22 @@ async def calculate_total_revenue(property_id: str, tenant_id: str) -> Dict[str,
                 # Use SQLAlchemy text for raw SQL
                 from sqlalchemy import text
                 
+                # query = text("""
+                #     SELECT 
+                #         property_id,
+                #         SUM(total_amount) as total_revenue,
+                #         COUNT(*) as reservation_count
+                #     FROM reservations 
+                #     WHERE property_id = :property_id AND tenant_id = :tenant_id
+                #     GROUP BY property_id
+                # """)
+
+                # Small rounding error fixed 112233
+
                 query = text("""
                     SELECT 
                         property_id,
-                        SUM(total_amount) as total_revenue,
+                        SUM(ROUND(total_amount, 2)) as total_revenue,
                         COUNT(*) as reservation_count
                     FROM reservations 
                     WHERE property_id = :property_id AND tenant_id = :tenant_id
