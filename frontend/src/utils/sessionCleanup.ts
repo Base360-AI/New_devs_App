@@ -4,6 +4,18 @@
 
 import { supabase } from '../lib/supabase';
 
+const getBackendBaseUrl = (): string => {
+  if (import.meta.env.VITE_BACKEND_URL) {
+    return import.meta.env.VITE_BACKEND_URL;
+  }
+
+  if (typeof window !== 'undefined') {
+    return `${window.location.protocol}//${window.location.hostname}:8000`;
+  }
+
+  return 'http://localhost:8000';
+};
+
 export async function ensureCleanSession() {
   /**
    * Force a clean session by:
@@ -28,7 +40,7 @@ export async function ensureCleanSession() {
     const sessionUser = session.user;
     
     // Verify the session is valid by checking with backend
-    const response = await fetch('/api/v1/auth/me', {
+    const response = await fetch(`${getBackendBaseUrl()}/api/v1/auth/me`, {
       headers: {
         'Authorization': `Bearer ${session.access_token}`
       }

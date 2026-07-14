@@ -1,8 +1,11 @@
 import axios from 'axios';
 import { supabase } from "./lib/supabase";
 
+const backendBaseUrl = import.meta.env.VITE_BACKEND_URL
+  || (typeof window !== 'undefined' ? `${window.location.protocol}//${window.location.hostname}:8000` : 'http://localhost:8000');
+
 const Api = axios.create({
-  baseURL: import.meta.env.VITE_BACKEND_URL + '/api/v1',
+  baseURL: `${backendBaseUrl}/api/v1`,
 });
 
 

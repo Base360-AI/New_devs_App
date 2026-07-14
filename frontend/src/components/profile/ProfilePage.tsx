@@ -8,8 +8,10 @@ import { toast } from 'react-hot-toast';
 import { profileService } from '../../services/profileService';
 import { ProfileResponse, ProfileUpdateRequest, PreferencesUpdateRequest } from '../../types/profile';
 import AvatarUpload from './AvatarUpload';
+import { useAuth } from '../../contexts/AuthContext.new';
 
 const ProfilePage: React.FC = () => {
+  const { user, loading: authLoading } = useAuth();
   const [profileData, setProfileData] = useState<ProfileResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -22,8 +24,19 @@ const ProfilePage: React.FC = () => {
   const [preferencesForm, setPreferencesForm] = useState<PreferencesUpdateRequest>({});
 
   useEffect(() => {
+    if (authLoading) {
+      return;
+    }
+
+    if (!user) {
+      setLoading(false);
+      setProfileData(null);
+      setError('Please sign in to view your profile');
+      return;
+    }
+
     loadProfile();
-  }, []);
+  }, [user, authLoading]);
 
   useEffect(() => {
     if (!profileData) return;
