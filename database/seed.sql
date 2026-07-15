@@ -19,6 +19,7 @@ INSERT INTO reservations (id, property_id, tenant_id, check_in_date, check_out_d
     ('res-tz-1', 'prop-001', 'tenant-a', '2024-02-29 23:30:00+00', '2024-03-05 10:00:00+00', 1250.000);
 
 -- Additional sample reservation data.
+-- Additional sample reservation data.
 INSERT INTO reservations (id, property_id, tenant_id, check_in_date, check_out_date, total_amount) VALUES
     -- prop-001: Beach House Alpha (tenant-a)
     ('res-dec-1', 'prop-001', 'tenant-a', '2024-03-15 10:00:00+00', '2024-03-18 10:00:00+00', 333.333),
@@ -30,6 +31,7 @@ INSERT INTO reservations (id, property_id, tenant_id, check_in_date, check_out_d
     ('res-005', 'prop-002', 'tenant-a', '2024-03-12 16:00:00+00', '2024-03-15 10:00:00+00', 1475.50),
     ('res-006', 'prop-002', 'tenant-a', '2024-03-20 15:00:00+00', '2024-03-23 12:00:00+00', 1199.25),
     ('res-007', 'prop-002', 'tenant-a', '2024-03-25 18:00:00+00', '2024-03-28 14:00:00+00', 1050.75),
+    ('res-cents-demo', 'prop-002', 'tenant-a', '2024-03-10 12:00:00+00', '2024-03-12 12:00:00+00', 0.005),
     
     -- prop-003: Country Villa Estate (tenant-a) - Luxury property with highest rates
     ('res-008', 'prop-003', 'tenant-a', '2024-03-02 15:00:00+00', '2024-03-09 12:00:00+00', 2850.00),
