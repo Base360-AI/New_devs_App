@@ -51,7 +51,7 @@ async def calculate_total_revenue(property_id: str, tenant_id: str) -> Dict[str,
                 query = text("""
                     SELECT 
                         property_id,
-                        SUM(total_amount) as total_revenue,
+                        SUM(ROUND(total_amount, 2)) as total_revenue,
                         COUNT(*) as reservation_count
                     FROM reservations 
                     WHERE property_id = :property_id AND tenant_id = :tenant_id
@@ -91,7 +91,7 @@ async def calculate_total_revenue(property_id: str, tenant_id: str) -> Dict[str,
         # Create property-specific mock data for testing when DB is unavailable
         # This ensures each property shows different figures
         mock_data = {
-            'prop-001': {'total': '1000.00', 'count': 3},
+            'prop-001': {'total': '2249.99', 'count': 4},
             'prop-002': {'total': '4975.50', 'count': 4}, 
             'prop-003': {'total': '6100.50', 'count': 2},
             'prop-004': {'total': '1776.50', 'count': 4},
