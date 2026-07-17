@@ -7,6 +7,8 @@ async def calculate_monthly_revenue(property_id: str, month: int, year: int, db_
     Calculates revenue for a specific month.
     """
 
+    # TODO: this calculation should consider the tenant timezone as well, it will resulting in missing and extra revenues on the 1st and the last days
+    # of the month
     start_date = datetime(year, month, 1)
     if month < 12:
         end_date = datetime(year, month + 1, 1)
