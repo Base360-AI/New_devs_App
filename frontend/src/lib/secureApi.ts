@@ -179,12 +179,11 @@ export class SecureAPIClient {
       if (token) {
         let extractedTenantId = null;
 
-        // Handle static local token.
-        if (token === "mock-token-123") {
-          extractedTenantId = "tenant-a";
-        }
+        // if (token === "mock-token-123") {
+        //   extractedTenantId = "tenant-a";
+        // }
         // Check if it's a valid JWT
-        else if (token.includes('.') && token.split('.').length === 3) {
+        if (token.includes('.') && token.split('.').length === 3) {
           const payload = JSON.parse(atob(token.split('.')[1]));
           extractedTenantId = payload.user_metadata?.tenant_id || payload.tenant_id;
         }
@@ -1452,20 +1451,22 @@ export class SecureAPIClient {
   /**
    * Get dashboard summary with optional simulation header
    */
-  async getDashboardSummary(propertyId: string, options?: { simulatedTenant?: string, timestamp?: number }) {
+ 
+  async getDashboardSummary(propertyId: string, options?: { timestamp?: number }) {
     const queryParams = new URLSearchParams({ property_id: propertyId });
     if (options?.timestamp) {
       queryParams.append('_t', options.timestamp.toString());
     }
+//  const requestOptions: RequestInit = {};
+//     if (options?.simulatedTenant) {
+//       requestOptions.headers = {
+//         'X-Simulated-Tenant': options.simulatedTenant
+//       };
+//     }
 
-    const requestOptions: RequestInit = {};
-    if (options?.simulatedTenant) {
-      requestOptions.headers = {
-        'X-Simulated-Tenant': options.simulatedTenant
-      };
-    }
-
-    return this.request<any>(`/api/v1/dashboard/summary?${queryParams}`, requestOptions);
+//     return this.request<any>(`/api/v1/dashboard/summary?${queryParams}`, requestOptions);
+ 
+    return this.request<any>(`/api/v1/dashboard/summary?${queryParams}`);
   }
 
   async uploadCompanyLogo(logo_url: string) {
