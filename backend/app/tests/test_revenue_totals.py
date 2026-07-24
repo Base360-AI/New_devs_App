@@ -1,4 +1,7 @@
+import asyncio
 import os
+from decimal import Decimal
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -6,6 +9,7 @@ from supabase import create_client
 
 from app.config import settings
 from app.main import app
+from app.services.reservations import calculate_monthly_revenue
 
 
 @pytest.fixture
@@ -36,3 +40,36 @@ def test_monthly_revenue_endpoint_counts_march_in_property_timezone(client, a_to
     )
     assert response.status_code == 200
     assert response.json()["total_revenue"] == 3500.0
+
+
+def test_monthly_revenue_rounds_half_cents_after_aggregation():
+    class Result:
+        def __init__(self, *, scalar=None, row=None):
+            self.scalar = scalar
+            self.row = row
+
+        def scalar_one_or_none(self):
+            return self.scalar
+
+        def fetchone(self):
+            return self.row
+
+    class Session:
+        def __init__(self):
+            self.results = iter([
+                Result(scalar="UTC"),
+                Result(row=SimpleNamespace(total=Decimal("10.005"))),
+            ])
+
+        async def execute(self, _query, _parameters):
+            return next(self.results)
+
+    total = asyncio.run(calculate_monthly_revenue(
+        property_id="prop-001",
+        month=3,
+        year=2024,
+        db_session=Session(),
+        tenant_id="tenant-a",
+    ))
+
+    assert total == Decimal("10.01")
