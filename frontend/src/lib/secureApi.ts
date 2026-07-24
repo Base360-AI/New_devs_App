@@ -68,6 +68,22 @@ export class SecureAPIClient {
     return SecureAPIClient.instance;
   }
 
+  async getDashboardProperties(): Promise<
+    Array<{
+      id: string;
+      name: string;
+      timezone: string;
+    }>
+  > {
+    return this.request<
+      Array<{
+        id: string;
+        name: string;
+        timezone: string;
+      }>
+    >("/api/v1/dashboard/properties");
+  }
+
   /**
    * Intercepts and blocks direct Supabase queries in development
    */
