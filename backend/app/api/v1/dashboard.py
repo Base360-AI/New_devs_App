@@ -3,6 +3,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from fastapi import APIRouter, Depends, HTTPException
 from typing import Dict, Any, Optional
 from app.services.cache import get_revenue_summary
+from app.services.reservations import MixedCurrencyError
 from app.core.auth import authenticate_request as get_current_user
 
 router = APIRouter()
@@ -21,7 +22,10 @@ async def get_dashboard_summary(
     if month is not None and not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", month):
         raise HTTPException(status_code=400, detail="month must be in YYYY-MM format")
 
-    revenue_data = await get_revenue_summary(property_id, tenant_id, month)
+    try:
+        revenue_data = await get_revenue_summary(property_id, tenant_id, month)
+    except MixedCurrencyError as e:
+        raise HTTPException(status_code=409, detail=str(e))
 
     # Quantize once, at presentation. Explicit ROUND_HALF_UP: finance expects
     # half-up; Python's Decimal default is ROUND_HALF_EVEN (banker's rounding).

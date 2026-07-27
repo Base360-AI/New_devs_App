@@ -4,6 +4,10 @@ from typing import Dict, Any, List, Optional, Tuple
 from zoneinfo import ZoneInfo
 
 
+class MixedCurrencyError(Exception):
+    """Raised when a total would silently sum amounts in different currencies."""
+
+
 def month_bounds_utc(month: str, tz_name: str) -> Tuple[datetime, datetime]:
     """Half-open UTC interval [start, end) covering the property-local month.
 
@@ -90,7 +94,9 @@ async def calculate_total_revenue(property_id: str, tenant_id: str, month: Optio
                     SELECT
                         property_id,
                         SUM(total_amount) as total_revenue,
-                        COUNT(*) as reservation_count
+                        COUNT(*) as reservation_count,
+                        COUNT(DISTINCT COALESCE(NULLIF(currency, ''), 'USD')) as currency_count,
+                        MIN(COALESCE(NULLIF(currency, ''), 'USD')) as currency
                     FROM reservations
                     WHERE property_id = :property_id AND tenant_id = :tenant_id{date_filter}
                     GROUP BY property_id
@@ -100,17 +106,25 @@ async def calculate_total_revenue(property_id: str, tenant_id: str, month: Optio
                 row = result.fetchone()
                 
                 if row:
+                    if row.currency_count > 1:
+                        # 100 EUR + 100 USD is not 200 of anything without a
+                        # conversion rate and the date that rate applied
+                        raise MixedCurrencyError(
+                            f"Property {property_id} has reservations in {row.currency_count} "
+                            f"currencies for period {period}; refusing to sum without conversion"
+                        )
                     total_revenue = Decimal(str(row.total_revenue))
                     return {
                         "property_id": property_id,
                         "tenant_id": tenant_id,
                         "period": period,
                         "total": str(total_revenue),
-                        "currency": "USD",
+                        "currency": row.currency,
                         "count": row.reservation_count
                     }
                 else:
-                    # No reservations found for this property
+                    # No reservations found for this property; currency falls back
+                    # to the schema default since there is nothing to read it from
                     return {
                         "property_id": property_id,
                         "tenant_id": tenant_id,
@@ -122,6 +136,8 @@ async def calculate_total_revenue(property_id: str, tenant_id: str, month: Optio
         else:
             raise Exception("Database pool not available")
             
+    except MixedCurrencyError:
+        raise
     except Exception as e:
         print(f"Database error for {property_id} (tenant: {tenant_id}): {e}")
         # Never substitute fabricated figures for a failed query - propagate instead
