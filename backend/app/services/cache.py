@@ -10,12 +10,17 @@ async def get_revenue_summary(property_id: str, tenant_id: str) -> Dict[str, Any
     """
     Fetches revenue summary, utilizing caching to improve performance.
     """
-    cache_key = f"revenue:{property_id}"
-    
+    # Tenant segment isolates clients; trailing segment is reserved for month scoping
+    cache_key = f"revenue:{tenant_id}:{property_id}:all"
+
     # Try to get from cache
     cached = await redis_client.get(cache_key)
     if cached:
-        return json.loads(cached)
+        result = json.loads(cached)
+        # Tripwire: a mis-keyed entry must fail closed as a miss, never cross tenants
+        if result.get("tenant_id") == tenant_id:
+            return result
+        print(f"Cache tenant mismatch for {cache_key}: expected {tenant_id}, got {result.get('tenant_id')} - treating as miss")
     
     # Revenue calculation is delegated to the reservation service.
     from app.services.reservations import calculate_total_revenue
