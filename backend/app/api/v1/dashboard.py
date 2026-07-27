@@ -1,4 +1,5 @@
 import re
+from decimal import Decimal, ROUND_HALF_UP
 from fastapi import APIRouter, Depends, HTTPException
 from typing import Dict, Any, Optional
 from app.services.cache import get_revenue_summary
@@ -21,12 +22,14 @@ async def get_dashboard_summary(
         raise HTTPException(status_code=400, detail="month must be in YYYY-MM format")
 
     revenue_data = await get_revenue_summary(property_id, tenant_id, month)
-    
-    total_revenue_float = float(revenue_data['total'])
-    
+
+    # Quantize once, at presentation. Explicit ROUND_HALF_UP: finance expects
+    # half-up; Python's Decimal default is ROUND_HALF_EVEN (banker's rounding).
+    total_revenue = Decimal(revenue_data['total']).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+
     return {
         "property_id": revenue_data['property_id'],
-        "total_revenue": total_revenue_float,
+        "total_revenue": str(total_revenue),
         "currency": revenue_data['currency'],
         "reservations_count": revenue_data['count']
     }
