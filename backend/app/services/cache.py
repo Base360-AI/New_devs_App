@@ -9,8 +9,9 @@ redis_client = redis.Redis.from_url(os.getenv("REDIS_URL", "redis://localhost:63
 async def get_revenue_summary(property_id: str, tenant_id: str) -> Dict[str, Any]:
     """
     Fetches revenue summary, utilizing caching to improve performance.
+    including tenant id to escape multi-tenant transparency between tenants. (cross-tenant data leakage).
     """
-    cache_key = f"revenue:{property_id}"
+    cache_key = f"revenue:{tenant_id}:{property_id}"
     
     # Try to get from cache
     cached = await redis_client.get(cache_key)
