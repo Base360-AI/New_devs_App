@@ -1,5 +1,5 @@
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Dict, Any
 
 async def calculate_monthly_revenue(
@@ -20,15 +20,12 @@ async def calculate_monthly_revenue(
         end_month = 1
 
     try:
-        # Import database pool
-        from app.core.database_pool import DatabasePool
+        from app.core.database_pool import db_pool
         
-        # Initialize pool if needed
-        db_pool = DatabasePool()
         await db_pool.initialize()
         
         if db_pool.session_factory:
-            async with await db_pool.get_session() as session:
+            async with db_pool.get_session() as session:
                 # Use SQLAlchemy text for raw SQL
                 from sqlalchemy import text
                 
@@ -66,10 +63,13 @@ async def calculate_monthly_revenue(
                 
                 if row:
                     total_revenue = Decimal(str(row.total_revenue))
+                    formatted_total = str(
+                        total_revenue.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+                    )
                     return {
                         "property_id": property_id,
                         "tenant_id": tenant_id,
-                        "total": str(total_revenue),
+                        "total": formatted_total,
                         "currency": currency,
                         "month": month,
                         "count": row.reservation_count
