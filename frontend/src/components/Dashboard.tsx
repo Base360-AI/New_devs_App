@@ -1,17 +1,21 @@
 import React, { useState } from "react";
 import { RevenueSummary } from "./RevenueSummary";
-
-const PROPERTIES = [
-  { id: 'prop-001', name: 'Beach House Alpha' },
-  { id: 'prop-002', name: 'City Apartment Downtown' },
-  { id: 'prop-003', name: 'Country Villa Estate' },
-  { id: 'prop-004', name: 'Lakeside Cottage' },
-  { id: 'prop-005', name: 'Urban Loft Modern' }
+import { useAuth } from "../contexts/AuthContext.new";
+const ALL_PROPERTIES = [
+  { id: "prop-001", name: "Beach House Alpha", tenantId: "tenant-a" },
+  { id: "prop-002", name: "City Apartment Downtown", tenantId: "tenant-a" },
+  { id: "prop-003", name: "Country Villa Estate", tenantId: "tenant-a" },
+  { id: "prop-004", name: "Lakeside Cottage", tenantId: "tenant-b" },
+  { id: "prop-005", name: "Urban Loft Modern", tenantId: "tenant-b" },
+  // note: tenant-b also has prop-001 "Mountain Lodge Beta" in seed —
+  // for video you can add that row if you want Ocean's list complete
 ];
 
 const Dashboard: React.FC = () => {
-  const [selectedProperty, setSelectedProperty] = useState('prop-001');
-
+  const { user } = useAuth();
+  const tenantId = user?.tenant_id || user?.app_metadata?.tenant_id || "tenant-a";
+  const PROPERTIES = ALL_PROPERTIES.filter((p) => p.tenantId === tenantId);
+  const [selectedProperty, setSelectedProperty] = useState(PROPERTIES[0]?.id ?? "prop-001");
   return (
     <div className="p-4 lg:p-6 min-h-full">
       <div className="max-w-7xl mx-auto">
@@ -22,11 +26,9 @@ const Dashboard: React.FC = () => {
             <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
               <div>
                 <h2 className="text-lg lg:text-xl font-medium text-gray-900 mb-2">Revenue Overview</h2>
-                <p className="text-sm lg:text-base text-gray-600">
-                  Monthly performance insights for your properties
-                </p>
+                <p className="text-sm lg:text-base text-gray-600">Monthly performance insights for your properties</p>
               </div>
-              
+
               {/* Property Selector */}
               <div className="flex flex-col sm:items-end">
                 <label className="text-xs font-medium text-gray-700 mb-1">Select Property</label>
