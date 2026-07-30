@@ -186,20 +186,22 @@ export class SecureAPIClient {
         // Check if it's a valid JWT
         else if (token.includes('.') && token.split('.').length === 3) {
           const payload = JSON.parse(atob(token.split('.')[1]));
-          extractedTenantId = payload.user_metadata?.tenant_id || payload.tenant_id;
+          // app_metadata is where the login endpoint puts the tenant; reading
+          // only the other two locations left every request unscoped.
+          extractedTenantId = payload.user_metadata?.tenant_id
+            || payload.app_metadata?.tenant_id
+            || payload.tenant_id;
         }
 
         if (extractedTenantId) {
-          // Validate tenant ID format (should be UUID)
           if (this.isValidTenantId(extractedTenantId)) {
             this.cachedTenantId = extractedTenantId;
             return this.cachedTenantId;
-          } else {
-            console.error('[SecureAPI] Invalid tenant ID format:', extractedTenantId);
-            // Clear invalid session to force re-authentication
-            this.cachedToken = null;
-            this.cachedTenantId = null;
           }
+          // An unrecognised tenant ID format is not a reason to destroy a
+          // working session - it only means we must not cache under it.
+          console.warn('[SecureAPI] Unrecognised tenant ID format, disabling request cache:', extractedTenantId);
+          this.cachedTenantId = null;
         }
       }
     } catch (error) {
@@ -243,9 +245,12 @@ export class SecureAPIClient {
    * Validate tenant ID format for security
    */
   private isValidTenantId(tenantId: string): boolean {
-    // Check for UUID format (basic validation)
+    if (typeof tenantId !== 'string' || tenantId.length === 0) return false;
+
+    // UUID tenants (production) or slug tenants such as "tenant-a".
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    return typeof tenantId === 'string' && tenantId.length > 0 && uuidRegex.test(tenantId);
+    const slugRegex = /^[a-z0-9][a-z0-9_-]{0,63}$/i;
+    return uuidRegex.test(tenantId) || slugRegex.test(tenantId);
   }
 
   /**
@@ -1450,22 +1455,27 @@ export class SecureAPIClient {
 
   // ============= DASHBOARD API =============
   /**
-   * Get dashboard summary with optional simulation header
+   * Get dashboard revenue summary for one property.
+   *
+   * The tenant is never sent by the client - it is derived server-side from
+   * the authenticated token, so the browser cannot ask for another tenant.
    */
-  async getDashboardSummary(propertyId: string, options?: { simulatedTenant?: string, timestamp?: number }) {
+  async getDashboardSummary(propertyId: string, options?: { month?: number, year?: number }) {
     const queryParams = new URLSearchParams({ property_id: propertyId });
-    if (options?.timestamp) {
-      queryParams.append('_t', options.timestamp.toString());
+    if (options?.month && options?.year) {
+      queryParams.append('month', options.month.toString());
+      queryParams.append('year', options.year.toString());
     }
 
-    const requestOptions: RequestInit = {};
-    if (options?.simulatedTenant) {
-      requestOptions.headers = {
-        'X-Simulated-Tenant': options.simulatedTenant
-      };
-    }
+    return this.request<any>(`/api/v1/dashboard/summary?${queryParams}`);
+  }
 
-    return this.request<any>(`/api/v1/dashboard/summary?${queryParams}`, requestOptions);
+  /**
+   * List the properties belonging to the authenticated user's tenant.
+   */
+  async getDashboardProperties() {
+    const res = await this.request<any>('/api/v1/dashboard/properties');
+    return Array.isArray(res?.properties) ? res.properties : [];
   }
 
   async uploadCompanyLogo(logo_url: string) {
