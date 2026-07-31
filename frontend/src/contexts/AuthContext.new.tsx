@@ -68,6 +68,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       source = 'user_metadata';
     }
 
+    if (!tenant_id && enhancedUser.tenant_id) {
+      tenant_id = enhancedUser.tenant_id;
+      source = 'user';
+    }
+
     // Add tenant_id as a direct property for backward compatibility
     enhancedUser.tenant_id = tenant_id;
 
@@ -103,6 +108,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     else if (enhancedUser.user_metadata?.tenant_id) {
       tenant_id = enhancedUser.user_metadata.tenant_id;
       source = 'user_metadata';
+    }
+
+    if (!tenant_id && enhancedUser.tenant_id) {
+      tenant_id = enhancedUser.tenant_id;
+      source = 'user';
     }
 
     // Add tenant_id as a direct property for backward compatibility
