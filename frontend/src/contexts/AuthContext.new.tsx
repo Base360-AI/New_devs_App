@@ -56,20 +56,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       source = 'jwt_claims';
     }
 
-    // 2. Fallback to app_metadata  
+    if (!tenant_id && enhancedUser.tenant_id) {
+      tenant_id = enhancedUser.tenant_id;
+      source = 'user.tenant_id';
+    }
+
     if (!tenant_id && enhancedUser.app_metadata?.tenant_id) {
       tenant_id = enhancedUser.app_metadata.tenant_id;
       source = 'app_metadata';
     }
 
-    // 3. Fallback to user_metadata
     if (!tenant_id && enhancedUser.user_metadata?.tenant_id) {
       tenant_id = enhancedUser.user_metadata.tenant_id;
       source = 'user_metadata';
     }
 
-    // Add tenant_id as a direct property for backward compatibility
-    enhancedUser.tenant_id = tenant_id;
+    if (tenant_id != null) {
+      enhancedUser.tenant_id = tenant_id;
+    }
 
     if (import.meta.env.DEV) {
       console.log('🔒 TENANT_RESOLUTION: Enhanced user object', {
@@ -90,23 +94,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const enrichUserFallback = useCallback((user: User): EnhancedUser => {
     const enhancedUser = user as EnhancedUser;
 
-    // Extract tenant_id from metadata only (no JWT claims available)
     let tenant_id: string | null = null;
     let source = 'none';
 
-    // Try app_metadata first
-    if (enhancedUser.app_metadata?.tenant_id) {
+    if (enhancedUser.tenant_id) {
+      tenant_id = enhancedUser.tenant_id;
+      source = 'user.tenant_id';
+    } else if (enhancedUser.app_metadata?.tenant_id) {
       tenant_id = enhancedUser.app_metadata.tenant_id;
       source = 'app_metadata';
-    }
-    // Fallback to user_metadata
-    else if (enhancedUser.user_metadata?.tenant_id) {
+    } else if (enhancedUser.user_metadata?.tenant_id) {
       tenant_id = enhancedUser.user_metadata.tenant_id;
       source = 'user_metadata';
     }
 
-    // Add tenant_id as a direct property for backward compatibility
-    enhancedUser.tenant_id = tenant_id;
+    // Only set when resolved — never overwrite a good tenant_id with null.
+    if (tenant_id != null) {
+      enhancedUser.tenant_id = tenant_id;
+    }
 
     if (import.meta.env.DEV) {
       console.log('🔒 TENANT_RESOLUTION (fallback): User object without session', {
