@@ -1,0 +1,10 @@
+# Local Python virtualenv used for running the backend outside Docker
+.venv/
+backend/.venv/
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# Vite's regenerated dependency cache
+frontend/node_modules/.vite/

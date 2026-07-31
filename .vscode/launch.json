@@ -1,10 +1,57 @@
 {
+  "version": "0.2.0",
   "configurations": [
     {
-      "type": "chrome",
-      "name": "http://localhost:5173",
+      // RECOMMENDED. Runs the backend directly under the debugger, against the
+      // Postgres + Redis containers. Breakpoints work with no attach step.
+      // Requires: docker compose up -d db redis
+      "name": "Python: Debug Backend (local)",
+      "type": "debugpy",
       "request": "launch",
-      "url": "http://localhost:5173/hr/away"
+      "module": "uvicorn",
+      "args": ["app.main:app", "--host", "0.0.0.0", "--port", "8000"],
+      "cwd": "${workspaceFolder}/backend",
+      "python": "${workspaceFolder}/backend/.venv/bin/python",
+      "env": {
+        "DATABASE_URL": "postgresql://postgres:postgres@localhost:5433/propertyflow",
+        "REDIS_URL": "redis://localhost:6380/0",
+        "SECRET_KEY": "debug_challenge_secret"
+      },
+      "justMyCode": false,
+      "console": "integratedTerminal"
+    },
+    {
+      // Alternative: attach to the backend running under debugpy in Docker.
+      //   docker compose -f docker-compose.yml -f docker-compose.debug.yml up
+      "name": "Python: Attach to Backend (Docker)",
+      "type": "debugpy",
+      "request": "attach",
+      "connect": { "host": "localhost", "port": 5678 },
+      "pathMappings": [
+        {
+          "localRoot": "${workspaceFolder}/backend",
+          "remoteRoot": "/app"
+        }
+      ],
+      "justMyCode": false
+    },
+    {
+      // Debug the React dashboard in Chrome (vite dev server on :5173).
+      "name": "Chrome: Debug Frontend",
+      "type": "chrome",
+      "request": "launch",
+      "url": "http://localhost:5173",
+      "webRoot": "${workspaceFolder}/frontend/src",
+      "sourceMaps": true
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Debug Full Stack (backend + frontend)",
+      "configurations": [
+        "Python: Debug Backend (local)",
+        "Chrome: Debug Frontend"
+      ]
     }
   ]
 }
