@@ -27,3 +27,5 @@ loguru
 redis>=5.0.0
 asyncpg>=0.27.0
 requests
+pytest>=8.0.0
+pytest-asyncio>=0.24.0
