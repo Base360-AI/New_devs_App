@@ -96,10 +96,32 @@ class LocalAuthClient {
         throw new Error(data.error);
       }
 
+      // Ensure tenant is available on the user object for AuthContext / Dashboard.
+      // Challenge JWT stores it in app_metadata; login body may already set tenant_id.
+      let user = data.user || {};
+      try {
+        const payload = JSON.parse(atob(data.access_token.split('.')[1]));
+        const jwtTenant =
+          payload?.app_metadata?.tenant_id ||
+          payload?.user_metadata?.tenant_id ||
+          payload?.tenant_id;
+        user = {
+          ...user,
+          tenant_id: user.tenant_id || jwtTenant,
+          app_metadata: {
+            ...(payload?.app_metadata || {}),
+            ...(user.app_metadata || {}),
+            tenant_id: user.tenant_id || jwtTenant || user.app_metadata?.tenant_id,
+          },
+        };
+      } catch {
+        // Keep login body user as-is if JWT cannot be decoded.
+      }
+
       const session: AuthSession = {
         access_token: data.access_token,
         token_type: data.token_type || 'bearer',
-        user: data.user,
+        user,
       };
 
       this.saveSession(session);
