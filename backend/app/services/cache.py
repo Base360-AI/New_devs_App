@@ -3,14 +3,13 @@ import redis.asyncio as redis
 from typing import Dict, Any
 import os
 
-# Initialize Redis client (typically configured centrally).
-redis_client = redis.Redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"))
+from ..core.redis_client import redis_client
 
 async def get_revenue_summary(property_id: str, tenant_id: str) -> Dict[str, Any]:
     """
     Fetches revenue summary, utilizing caching to improve performance.
     """
-    cache_key = f"revenue:{property_id}"
+    cache_key = f"revenue:{property_id}:{tenant_id}"
     
     # Try to get from cache
     cached = await redis_client.get(cache_key)
@@ -23,7 +22,7 @@ async def get_revenue_summary(property_id: str, tenant_id: str) -> Dict[str, Any
     # Calculate revenue
     result = await calculate_total_revenue(property_id, tenant_id)
     
-    # Cache the result for 5 minutes
-    await redis_client.setex(cache_key, 300, json.dumps(result))
+    # Cache the result for 5 minutes (default for this redis_client helper class)
+    await redis_client.set(cache_key, json.dumps(result))
     
     return result

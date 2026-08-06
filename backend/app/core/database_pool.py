@@ -1,6 +1,6 @@
 import asyncio
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.pool import QueuePool
+from sqlalchemy.pool import AsyncAdaptedQueuePool
 import logging
 from ..config import settings
 
@@ -19,7 +19,7 @@ class DatabasePool:
             
             self.engine = create_async_engine(
                 database_url,
-                poolclass=QueuePool,
+                poolclass=AsyncAdaptedQueuePool,
                 pool_size=20,  # Number of connections to maintain
                 max_overflow=30,  # Additional connections when needed
                 pool_pre_ping=True,  # Validate connections
@@ -56,5 +56,5 @@ db_pool = DatabasePool()
 
 async def get_db_session() -> AsyncSession:
     """Dependency to get database session"""
-    async with db_pool.get_session() as session:
+    async with await db_pool.get_session() as session:
         yield session
