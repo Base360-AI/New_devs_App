@@ -2,14 +2,6 @@ import React, { useState } from "react";
 import { RevenueSummary } from "./RevenueSummary";
 import { useAuth } from "../contexts/AuthContext.new";
 
-const PROPERTIES = [
-  { id: 'prop-001', name: 'Beach House Alpha' },
-  { id: 'prop-002', name: 'City Apartment Downtown' },
-  { id: 'prop-003', name: 'Country Villa Estate' },
-  { id: 'prop-004', name: 'Lakeside Cottage' },
-  { id: 'prop-005', name: 'Urban Loft Modern' }
-];
-
 const PROPERTIES_BY_EMAIL: Record<string, { id: string; name: string }[]> = {
   'sunset@propertyflow.com': [
     { id: 'prop-001', name: 'Beach House Alpha' },
@@ -40,7 +32,7 @@ const Dashboard: React.FC = () => {
               <div>
                 <h2 className="text-lg lg:text-xl font-medium text-gray-900 mb-2">Revenue Overview</h2>
                 <p className="text-sm lg:text-base text-gray-600">
-                  Monthly performance insights for your properties
+                  Total performance insights for your properties
                 </p>
               </div>
               

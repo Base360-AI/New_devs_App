@@ -65,7 +65,7 @@ async def calculate_total_revenue(property_id: str, tenant_id: str) -> Dict[str,
             row = result.fetchone()
             
             if row:
-                total_revenue = Decimal(str(row.total_revenue))
+                total_revenue = Decimal(row.total_revenue)
                 return {
                     "property_id": property_id,
                     "tenant_id": tenant_id,
