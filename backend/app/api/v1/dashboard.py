@@ -12,10 +12,12 @@ async def get_dashboard_summary(
 ) -> Dict[str, Any]:
     
     tenant_id = getattr(current_user, "tenant_id", "default_tenant") or "default_tenant"
-    
-    revenue_data = await get_revenue_summary(property_id, tenant_id)
-    
-    total_revenue_float = float(revenue_data['total'])
+
+    try:
+        revenue_data = await get_revenue_summary(property_id, tenant_id)
+        total_revenue_float = float(revenue_data['total'])
+    except:
+        raise HTTPException(503) 
     
     return {
         "property_id": revenue_data['property_id'],
