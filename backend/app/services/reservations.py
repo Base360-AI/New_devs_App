@@ -1,35 +1,61 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Dict, Any, List
+from zoneinfo import ZoneInfo
 
-async def calculate_monthly_revenue(property_id: str, month: int, year: int, db_session=None) -> Decimal:
+async def calculate_monthly_revenue(property_id: str, tenant_id: str, month: int, year: int, db_session=None) -> Decimal:
     """
-    Calculates revenue for a specific month.
+    Calculates revenue for a specific month, as the month falls at the property.
     """
 
-    start_date = datetime(year, month, 1)
-    if month < 12:
-        end_date = datetime(year, month + 1, 1)
-    else:
-        end_date = datetime(year + 1, 1, 1)
-        
-    print(f"DEBUG: Querying revenue for {property_id} from {start_date} to {end_date}")
+    from app.core.database_pool import DatabasePool
+    from sqlalchemy import text
 
-    # SQL Simulation (This would be executed against the actual DB)
-    query = """
-        SELECT SUM(total_amount) as total
-        FROM reservations
-        WHERE property_id = $1
-        AND tenant_id = $2
-        AND check_in_date >= $3
-        AND check_in_date < $4
-    """
-    
-    # In production this query executes against a database session.
-    # result = await db.fetch_val(query, property_id, tenant_id, start_date, end_date)
-    # return result or Decimal('0')
-    
-    return Decimal('0') # Placeholder for now until DB connection is finalized
+    db_pool = DatabasePool()
+    await db_pool.initialize()
+
+    if not db_pool.session_factory:
+        raise Exception("Database pool not available")
+
+    async with db_pool.get_session() as session:
+        property_timezone = await session.scalar(
+            text("SELECT timezone FROM properties WHERE id = :property_id AND tenant_id = :tenant_id"),
+            {"property_id": property_id, "tenant_id": tenant_id}
+        )
+
+        if property_timezone is None:
+            raise ValueError(f"No property {property_id} for tenant {tenant_id}")
+
+        # The month starts at local midnight, not 00:00 UTC: a check-in stored as
+        # 2024-02-29 23:30+00 is already 1 March in Europe/Paris.
+        tz = ZoneInfo(property_timezone)
+
+        start_date = datetime(year, month, 1, tzinfo=tz).astimezone(timezone.utc)
+        if month < 12:
+            end_date = datetime(year, month + 1, 1, tzinfo=tz).astimezone(timezone.utc)
+        else:
+            end_date = datetime(year + 1, 1, 1, tzinfo=tz).astimezone(timezone.utc)
+
+        print(f"DEBUG: Querying revenue for {property_id} from {start_date} to {end_date}")
+
+        query = text("""
+            SELECT SUM(total_amount) as total
+            FROM reservations
+            WHERE property_id = :property_id
+            AND tenant_id = :tenant_id
+            AND check_in_date >= :start_date
+            AND check_in_date < :end_date
+        """)
+
+        total = await session.scalar(query, {
+            "property_id": property_id,
+            "tenant_id": tenant_id,
+            "start_date": start_date,
+            "end_date": end_date
+        })
+
+    # SUM over no rows is NULL, which is a zero month rather than a missing answer.
+    return total if total is not None else Decimal('0.000')
 
 async def calculate_total_revenue(property_id: str, tenant_id: str) -> Dict[str, Any]:
     """
@@ -86,24 +112,7 @@ async def calculate_total_revenue(property_id: str, tenant_id: str) -> Dict[str,
             raise Exception("Database pool not available")
             
     except Exception as e:
+        # No fallback figures: inventing revenue when the database is unreachable is
+        # worse than failing, and it hid this outage until the numbers were queried.
         print(f"Database error for {property_id} (tenant: {tenant_id}): {e}")
-        
-        # Create property-specific mock data for testing when DB is unavailable
-        # This ensures each property shows different figures
-        mock_data = {
-            'prop-001': {'total': '1000.00', 'count': 3},
-            'prop-002': {'total': '4975.50', 'count': 4}, 
-            'prop-003': {'total': '6100.50', 'count': 2},
-            'prop-004': {'total': '1776.50', 'count': 4},
-            'prop-005': {'total': '3256.00', 'count': 3}
-        }
-        
-        mock_property_data = mock_data.get(property_id, {'total': '0.00', 'count': 0})
-        
-        return {
-            "property_id": property_id,
-            "tenant_id": tenant_id, 
-            "total": mock_property_data['total'],
-            "currency": "USD",
-            "count": mock_property_data['count']
-        }
+        raise
