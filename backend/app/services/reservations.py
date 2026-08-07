@@ -1,18 +1,23 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Dict, Any, List
+from zoneinfo import ZoneInfo
 
-async def calculate_monthly_revenue(property_id: str, month: int, year: int, db_session=None) -> Decimal:
+async def calculate_monthly_revenue(property_id: str, month: int, year: int, property_timezone: str, db_session=None) -> Decimal:
     """
-    Calculates revenue for a specific month.
+    Calculates revenue for a specific month, as the month falls at the property.
     """
 
-    start_date = datetime(year, month, 1)
+    # The month starts at local midnight, not 00:00 UTC: a check-in stored as
+    # 2024-02-29 23:30+00 is already 1 March in Europe/Paris.
+    tz = ZoneInfo(property_timezone)
+
+    start_date = datetime(year, month, 1, tzinfo=tz).astimezone(timezone.utc)
     if month < 12:
-        end_date = datetime(year, month + 1, 1)
+        end_date = datetime(year, month + 1, 1, tzinfo=tz).astimezone(timezone.utc)
     else:
-        end_date = datetime(year + 1, 1, 1)
-        
+        end_date = datetime(year + 1, 1, 1, tzinfo=tz).astimezone(timezone.utc)
+
     print(f"DEBUG: Querying revenue for {property_id} from {start_date} to {end_date}")
 
     # SQL Simulation (This would be executed against the actual DB)
