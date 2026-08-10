@@ -3,10 +3,34 @@ import { SecureAPI } from '../lib/secureApi';
 
 interface RevenueData {
     property_id: string;
-    total_revenue: number;
+    // Decimal string ("2250.00"), NOT a number. The backend aggregates a
+    // NUMERIC(10,3) column; binding that to a JS number would re-round it to the
+    // nearest double before we ever get to display it.
+    total_revenue: string;
     currency: string;
     reservations_count: number;
+    timezone?: string | null;
 }
+
+/**
+ * Formats a decimal string for display using pure string manipulation.
+ * No parseFloat, no `* 100`, no Math.round - the server already rounded to cents,
+ * and the client's only job is to insert thousands separators.
+ */
+const formatAmount = (amount: string): string => {
+    const negative = amount.startsWith('-');
+    const unsigned = negative ? amount.slice(1) : amount;
+    const [whole, fraction = ''] = unsigned.split('.');
+    const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    return `${negative ? '-' : ''}${grouped}.${fraction.padEnd(2, '0').slice(0, 2)}`;
+};
+
+/** True when the value could not survive a float round-trip (regression guard). */
+const isLossyAsFloat = (amount: string): boolean => {
+    const asNumber = Number(amount);
+    if (!Number.isFinite(asNumber)) return true;
+    return asNumber.toFixed(2) !== formatAmount(amount).replace(/,/g, '');
+};
 
 interface RevenueSummaryProps {
     propertyId?: string;
@@ -61,7 +85,7 @@ export const RevenueSummary: React.FC<RevenueSummaryProps> = ({ propertyId = 'pr
     if (error) return <div className="p-4 text-red-500 bg-red-50 rounded-lg">{error}</div>;
     if (!data) return null;
 
-    const displayTotal = Math.round(data.total_revenue * 100) / 100;
+    const displayTotal = formatAmount(data.total_revenue);
 
     return (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition-shadow duration-300">
@@ -78,7 +102,7 @@ export const RevenueSummary: React.FC<RevenueSummaryProps> = ({ propertyId = 'pr
                         <h2 className="text-sm font-medium text-gray-500 uppercase tracking-wide">Total Revenue</h2>
                         <div className="flex items-baseline gap-2 mt-1">
                             <span className="text-3xl font-bold text-gray-900 tracking-tight">
-                                {data.currency} {displayTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                {data.currency} {displayTotal}
                             </span>
                             {/* Fake trend indicator for premium feel */}
                             <span className="inline-flex items-baseline px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 md:mt-2 lg:mt-0">
@@ -104,7 +128,7 @@ export const RevenueSummary: React.FC<RevenueSummaryProps> = ({ propertyId = 'pr
 
                 {/* Precision Warning Area */}
                 <div className="mt-4 h-6">
-                    {Math.abs(data.total_revenue - displayTotal) > 0.000001 && showRaw && (
+                    {isLossyAsFloat(data.total_revenue) && showRaw && (
                         <div className="flex items-center text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded">
                             <svg className="h-4 w-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />

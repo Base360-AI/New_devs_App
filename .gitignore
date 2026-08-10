@@ -1,0 +1,17 @@
+# Python bytecode (generated inside the container via the ./backend:/app bind mount)
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Node
+node_modules/
+
+# Environment overrides
+.env.local
+*.local
+
+# Editor / OS
+.DS_Store
+*.swp
