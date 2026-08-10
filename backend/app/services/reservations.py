@@ -1,109 +1,145 @@
 from datetime import datetime
-from decimal import Decimal
-from typing import Dict, Any, List
+from decimal import Decimal, ROUND_HALF_UP
+from typing import Dict, Any, Optional
+import logging
 
-async def calculate_monthly_revenue(property_id: str, month: int, year: int, db_session=None) -> Decimal:
-    """
-    Calculates revenue for a specific month.
-    """
+from sqlalchemy import text
 
-    start_date = datetime(year, month, 1)
+from app.core.database_pool import db_pool
+
+logger = logging.getLogger(__name__)
+
+# Money is rounded exactly once, at the very end of the aggregation.
+CENTS = Decimal("0.01")
+
+
+class RevenueUnavailableError(RuntimeError):
+    """Raised when revenue cannot be computed from the database."""
+
+
+def _month_bounds(month: int, year: int) -> tuple[datetime, datetime]:
+    """
+    Returns the [start, end) bounds of a month as *naive local wall-clock* datetimes.
+
+    These are deliberately naive: they are compared against
+    `check_in_date AT TIME ZONE property.timezone`, i.e. against the local time at
+    the property. A stay that starts on 2024-02-29 23:30 UTC starts on
+    2024-03-01 00:30 in Europe/Paris, so it belongs to the client's March, not February.
+    """
+    start = datetime(year, month, 1)
     if month < 12:
-        end_date = datetime(year, month + 1, 1)
+        end = datetime(year, month + 1, 1)
     else:
-        end_date = datetime(year + 1, 1, 1)
-        
-    print(f"DEBUG: Querying revenue for {property_id} from {start_date} to {end_date}")
+        end = datetime(year + 1, 1, 1)
+    return start, end
 
-    # SQL Simulation (This would be executed against the actual DB)
-    query = """
-        SELECT SUM(total_amount) as total
-        FROM reservations
-        WHERE property_id = $1
-        AND tenant_id = $2
-        AND check_in_date >= $3
-        AND check_in_date < $4
-    """
-    
-    # In production this query executes against a database session.
-    # result = await db.fetch_val(query, property_id, tenant_id, start_date, end_date)
-    # return result or Decimal('0')
-    
-    return Decimal('0') # Placeholder for now until DB connection is finalized
 
-async def calculate_total_revenue(property_id: str, tenant_id: str) -> Dict[str, Any]:
+async def _fetch_revenue(
+    property_id: str,
+    tenant_id: str,
+    month: Optional[int] = None,
+    year: Optional[int] = None,
+) -> Dict[str, Any]:
     """
-    Aggregates revenue from database.
+    Aggregates reservation revenue for one property of one tenant.
+
+    Two things make this query correct:
+
+    1. It joins properties on BOTH (id, tenant_id) and filters reservations on
+       tenant_id. Property IDs are only unique within a tenant, so filtering on
+       property_id alone would mix two different buildings owned by two different
+       companies.
+    2. Month filtering happens on the property's local calendar
+       (`check_in_date AT TIME ZONE p.timezone`), not on UTC.
     """
-    try:
-        # Import database pool
-        from app.core.database_pool import DatabasePool
-        
-        # Initialize pool if needed
-        db_pool = DatabasePool()
-        await db_pool.initialize()
-        
-        if db_pool.session_factory:
-            async with db_pool.get_session() as session:
-                # Use SQLAlchemy text for raw SQL
-                from sqlalchemy import text
-                
-                query = text("""
-                    SELECT 
-                        property_id,
-                        SUM(total_amount) as total_revenue,
-                        COUNT(*) as reservation_count
-                    FROM reservations 
-                    WHERE property_id = :property_id AND tenant_id = :tenant_id
-                    GROUP BY property_id
-                """)
-                
-                result = await session.execute(query, {
-                    "property_id": property_id, 
-                    "tenant_id": tenant_id
-                })
-                row = result.fetchone()
-                
-                if row:
-                    total_revenue = Decimal(str(row.total_revenue))
-                    return {
-                        "property_id": property_id,
-                        "tenant_id": tenant_id,
-                        "total": str(total_revenue),
-                        "currency": "USD", 
-                        "count": row.reservation_count
-                    }
-                else:
-                    # No reservations found for this property
-                    return {
-                        "property_id": property_id,
-                        "tenant_id": tenant_id,
-                        "total": "0.00",
-                        "currency": "USD",
-                        "count": 0
-                    }
-        else:
-            raise Exception("Database pool not available")
-            
-    except Exception as e:
-        print(f"Database error for {property_id} (tenant: {tenant_id}): {e}")
-        
-        # Create property-specific mock data for testing when DB is unavailable
-        # This ensures each property shows different figures
-        mock_data = {
-            'prop-001': {'total': '1000.00', 'count': 3},
-            'prop-002': {'total': '4975.50', 'count': 4}, 
-            'prop-003': {'total': '6100.50', 'count': 2},
-            'prop-004': {'total': '1776.50', 'count': 4},
-            'prop-005': {'total': '3256.00', 'count': 3}
-        }
-        
-        mock_property_data = mock_data.get(property_id, {'total': '0.00', 'count': 0})
-        
-        return {
-            "property_id": property_id,
-            "tenant_id": tenant_id, 
-            "total": mock_property_data['total'],
-            "currency": "USD",
-            "count": mock_property_data['count']
-        }
+    await db_pool.ensure_initialized()
+
+    if not db_pool.session_factory:
+        raise RevenueUnavailableError("Database pool is not available")
+
+    period_filter = ""
+    params: Dict[str, Any] = {"property_id": property_id, "tenant_id": tenant_id}
+
+    if month and year:
+        period_start, period_end = _month_bounds(month, year)
+        period_filter = """
+              AND (r.check_in_date AT TIME ZONE p.timezone) >= CAST(:period_start AS timestamp)
+              AND (r.check_in_date AT TIME ZONE p.timezone) <  CAST(:period_end   AS timestamp)
+        """
+        params["period_start"] = period_start
+        params["period_end"] = period_end
+
+    query = text(
+        f"""
+        SELECT
+            COALESCE(SUM(r.total_amount), 0) AS total_revenue,
+            COUNT(*)                         AS reservation_count,
+            COUNT(DISTINCT r.currency)       AS currency_count,
+            MIN(r.currency)                  AS currency,
+            MIN(p.timezone)                  AS property_timezone
+        FROM reservations r
+        JOIN properties p
+          ON p.id = r.property_id
+         AND p.tenant_id = r.tenant_id
+        WHERE r.property_id = :property_id
+          AND r.tenant_id   = :tenant_id
+          {period_filter}
+        """
+    )
+
+    async with db_pool.session() as session:
+        result = await session.execute(query, params)
+        row = result.fetchone()
+
+    # Aggregates without GROUP BY always return exactly one row, even for no matches.
+    raw_total = Decimal(str(row.total_revenue))
+    count = int(row.reservation_count)
+
+    if row.currency_count and row.currency_count > 1:
+        # Summing mixed currencies produces a meaningless number; refuse instead.
+        raise RevenueUnavailableError(
+            f"Property {property_id} has reservations in {row.currency_count} different "
+            f"currencies; a single total cannot be computed."
+        )
+
+    # SUM at full NUMERIC(10,3) precision first, round to cents exactly once.
+    # Rounding each reservation first would turn 333.333 + 333.333 + 333.334
+    # into 999.99 instead of 1000.00.
+    total = raw_total.quantize(CENTS, rounding=ROUND_HALF_UP)
+
+    return {
+        "property_id": property_id,
+        "tenant_id": tenant_id,
+        "total": str(total),
+        "currency": row.currency or "USD",
+        "count": count,
+        "timezone": row.property_timezone,
+    }
+
+
+async def calculate_monthly_revenue(
+    property_id: str,
+    tenant_id: str,
+    month: int,
+    year: int,
+) -> Decimal:
+    """
+    Calculates revenue for a specific month, on the property's local calendar.
+    """
+    summary = await _fetch_revenue(property_id, tenant_id, month=month, year=year)
+    return Decimal(summary["total"])
+
+
+async def calculate_total_revenue(
+    property_id: str,
+    tenant_id: str,
+    month: Optional[int] = None,
+    year: Optional[int] = None,
+) -> Dict[str, Any]:
+    """
+    Aggregates revenue from database, optionally narrowed to a single month.
+    """
+    if not tenant_id:
+        raise ValueError("tenant_id is required to compute revenue")
+
+    return await _fetch_revenue(property_id, tenant_id, month=month, year=year)
