@@ -1,6 +1,8 @@
 import asyncio
 import json
 
+from redis.exceptions import ConnectionError as RedisConnectionError
+
 from app.services import cache, reservations
 
 
@@ -14,6 +16,16 @@ class FakeRedis:
     async def setex(self, key: str, ttl: int, value: str) -> None:
         assert ttl == 300
         self.values[key] = value
+
+
+class FailingReadRedis(FakeRedis):
+    async def get(self, key: str) -> str | None:
+        raise RedisConnectionError("Redis is unavailable")
+
+
+class FailingWriteRedis(FakeRedis):
+    async def setex(self, key: str, ttl: int, value: str) -> None:
+        raise RedisConnectionError("Redis is unavailable")
 
 
 def test_revenue_cache_is_scoped_by_tenant(monkeypatch) -> None:
@@ -63,3 +75,57 @@ def test_revenue_cache_is_scoped_by_tenant(monkeypatch) -> None:
         "tenant_id"
     ] == "tenant-a"
 
+
+def test_cache_read_failure_falls_back_to_database(monkeypatch) -> None:
+    expected = {
+        "property_id": "prop-001",
+        "tenant_id": "tenant-a",
+        "total": "2250.00",
+        "currency": "USD",
+        "count": 4,
+    }
+
+    async def fake_calculate_total_revenue(
+        property_id: str,
+        tenant_id: str,
+    ) -> dict:
+        assert (property_id, tenant_id) == ("prop-001", "tenant-a")
+        return expected
+
+    monkeypatch.setattr(cache, "redis_client", FailingReadRedis())
+    monkeypatch.setattr(
+        reservations,
+        "calculate_total_revenue",
+        fake_calculate_total_revenue,
+    )
+
+    result = asyncio.run(cache.get_revenue_summary("prop-001", "tenant-a"))
+
+    assert result == expected
+
+
+def test_cache_write_failure_still_returns_database_result(monkeypatch) -> None:
+    expected = {
+        "property_id": "prop-001",
+        "tenant_id": "tenant-a",
+        "total": "2250.00",
+        "currency": "USD",
+        "count": 4,
+    }
+
+    async def fake_calculate_total_revenue(
+        property_id: str,
+        tenant_id: str,
+    ) -> dict:
+        return expected
+
+    monkeypatch.setattr(cache, "redis_client", FailingWriteRedis())
+    monkeypatch.setattr(
+        reservations,
+        "calculate_total_revenue",
+        fake_calculate_total_revenue,
+    )
+
+    result = asyncio.run(cache.get_revenue_summary("prop-001", "tenant-a"))
+
+    assert result == expected
