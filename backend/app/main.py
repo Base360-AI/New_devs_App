@@ -90,6 +90,13 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting up...")
 
+    # Revenue reporting depends on the authoritative PostgreSQL database, so
+    # fail startup rather than silently serving fabricated financial data.
+    from .core.database_pool import db_pool
+
+    await db_pool.initialize()
+    logger.info("Revenue database pool initialized")
+
     # Initialize Supabase connection pool
     try:
         from .core.supabase_connection_pool import supabase_pool
@@ -126,6 +133,9 @@ async def lifespan(app: FastAPI):
     # Shutdown async processor
     await async_processor.shutdown()
     logger.info("Async processor shutdown completed")
+
+    await db_pool.close()
+    logger.info("Revenue database pool closed")
 
     # Close connection pool
     try:

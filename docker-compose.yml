@@ -48,5 +48,15 @@ services:
     ports:
       - "6380:6379" # Maps internal 6379 to host 6380 to avoid local conflicts
 
+  redisinsight:
+    image: redis/redisinsight:latest
+    ports:
+      - "5540:5540"
+    volumes:
+      - redisinsight:/data
+    depends_on:
+      - redis
+
 volumes:
   pgdata:
+  redisinsight:
