@@ -1,6 +1,15 @@
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Dict, Any, List
+
+
+CURRENCY_QUANTUM = Decimal("0.01")
+
+
+def round_currency_amount(amount: Decimal) -> str:
+    """Round an exact decimal amount to cents using commercial rounding."""
+    rounded = amount.quantize(CURRENCY_QUANTUM, rounding=ROUND_HALF_UP)
+    return format(rounded, ".2f")
 
 async def calculate_monthly_revenue(property_id: str, month: int, year: int, db_session=None) -> Decimal:
     """
@@ -41,12 +50,10 @@ async def calculate_total_revenue(property_id: str, tenant_id: str) -> Dict[str,
 
     query = text("""
         SELECT
-            property_id,
-            SUM(total_amount) as total_revenue,
+            COALESCE(SUM(total_amount), 0::NUMERIC) as total_revenue,
             COUNT(*) as reservation_count
         FROM reservations
         WHERE property_id = :property_id AND tenant_id = :tenant_id
-        GROUP BY property_id
     """)
 
     async with db_pool.get_session() as session:
@@ -59,20 +66,11 @@ async def calculate_total_revenue(property_id: str, tenant_id: str) -> Dict[str,
         )
         row = result.fetchone()
 
-    if row is None:
-        return {
-            "property_id": property_id,
-            "tenant_id": tenant_id,
-            "total": "0.00",
-            "currency": "USD",
-            "count": 0,
-        }
-
     total_revenue = Decimal(str(row.total_revenue))
     return {
         "property_id": property_id,
         "tenant_id": tenant_id,
-        "total": str(total_revenue),
+        "total": round_currency_amount(total_revenue),
         "currency": "USD",
         "count": row.reservation_count,
     }
