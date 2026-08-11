@@ -15,6 +15,7 @@ import os
 import time
 
 from app.core.redis_client import redis_client
+from .config import settings
 from .api.v1 import (
     users_lightning,
     cities,
@@ -90,15 +91,18 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting up...")
 
-    # Initialize Supabase connection pool
-    try:
-        from .core.supabase_connection_pool import supabase_pool
+    # Initialize Supabase connection pool only when credentials are configured.
+    if settings.has_supabase_credentials:
+        try:
+            from .core.supabase_connection_pool import supabase_pool
 
-        await supabase_pool.initialize()
-        logger.info("✅ Supabase connection pool initialized")
-    except Exception as e:
-        logger.error(f"❌ Supabase connection pool initialization failed: {e}")
-        # Continue startup - fallback to direct connections
+            await supabase_pool.initialize()
+            logger.info("✅ Supabase connection pool initialized")
+        except Exception as e:
+            logger.error(f"❌ Supabase connection pool initialization failed: {e}")
+            # Continue startup - fallback to direct connections
+    else:
+        logger.info("Supabase credentials not configured - using Challenge Mode with local Postgres and mock Supabase client")
 
     # Initialize Redis connection with timeout
     try:
@@ -127,14 +131,15 @@ async def lifespan(app: FastAPI):
     await async_processor.shutdown()
     logger.info("Async processor shutdown completed")
 
-    # Close connection pool
-    try:
-        from .core.supabase_connection_pool import supabase_pool
+    # Close connection pool only when it was configured and initialized.
+    if settings.has_supabase_credentials:
+        try:
+            from .core.supabase_connection_pool import supabase_pool
 
-        await supabase_pool.close()
-        logger.info("✅ Supabase connection pool closed")
-    except Exception as e:
-        logger.warning(f"⚠️ Error closing connection pool: {e}")
+            await supabase_pool.close()
+            logger.info("✅ Supabase connection pool closed")
+        except Exception as e:
+            logger.warning(f"⚠️ Error closing connection pool: {e}")
 
 
 app = FastAPI(

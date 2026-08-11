@@ -15,7 +15,7 @@ dependencies = [
     "openai>=2.1.0",
     "orjson>=3.11.1",
     "pandas>=2.3.2",
-    "pillow==10.2.0",
+    "pillow==10.4.0",
     "psycopg2-binary>=2.9.10",
     "pydantic-settings>=2.10.1",
     "pydantic[email]>=2.11.7",
