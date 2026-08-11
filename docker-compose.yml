@@ -8,7 +8,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_URL=postgresql://postgres:postgres@db:5432/propertyflow
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/propertyflow
       - REDIS_URL=redis://redis:6379/0
       - SECRET_KEY=debug_challenge_secret
     depends_on:

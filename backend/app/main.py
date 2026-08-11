@@ -29,6 +29,7 @@ from .api.v1 import (
     persistent_auth,
     dashboard,
     login,
+    properties,
 )
 
 from .monitoring.middleware import PerformanceMonitoringMiddleware
@@ -183,6 +184,9 @@ app.include_router(profile.router, prefix="/api/v1", tags=["profile"])
 
 # Dashboard
 app.include_router(dashboard.router, prefix="/api/v1", tags=["dashboard"])
+
+# Properties
+app.include_router(properties.router, prefix="/api/v1", tags=["properties"])
 
 # Bootstrap & Settings (for AppContext)
 app.include_router(company_settings.router, prefix="/api/v1", tags=["company-settings"])
