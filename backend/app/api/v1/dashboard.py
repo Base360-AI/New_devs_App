@@ -17,11 +17,12 @@ async def get_dashboard_summary(
 
     revenue_data = await get_revenue_summary(property_id, tenant_id, month, year)
 
-    total_revenue_float = float(revenue_data['total'])
-
     return {
         "property_id": revenue_data['property_id'],
-        "total_revenue": total_revenue_float,
+        # Money stays an exact decimal string. Amounts are NUMERIC(10,3) and a float
+        # cannot hold them exactly, so casting here would round before the client
+        # ever sees the value.
+        "total_revenue": revenue_data['total'],
         "currency": revenue_data['currency'],
         "reservations_count": revenue_data['count'],
         "period": revenue_data['period']

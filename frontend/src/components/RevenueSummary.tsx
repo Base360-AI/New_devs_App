@@ -3,11 +3,42 @@ import { SecureAPI } from '../lib/secureApi';
 
 interface RevenueData {
     property_id: string;
-    total_revenue: number;
+    // Exact decimal string, e.g. "2250.000". Never parse this into a number for
+    // display: amounts carry sub-cent precision that a float silently rounds away.
+    total_revenue: string;
     currency: string;
     reservations_count: number;
     period: string | null;
 }
+
+/**
+ * Formats an exact decimal string as currency using integer arithmetic only.
+ *
+ * `Math.round(value * 100) / 100` cannot do this correctly: 1000.005 * 100 is
+ * 100000.49999999999 in binary floating point, so the value rounds down and a cent
+ * disappears. Scaling to an integer number of cents via BigInt keeps every input exact.
+ */
+const formatMoney = (amount: string): string => {
+    const trimmed = amount.trim();
+    if (!/^-?\d+(\.\d+)?$/.test(trimmed)) return amount;
+
+    const negative = trimmed.startsWith('-');
+    const [whole, fraction = ''] = trimmed.replace(/^-/, '').split('.');
+
+    // Truncate to cents, then round half-up on the first discarded digit.
+    const cents = BigInt(whole + fraction.slice(0, 2).padEnd(2, '0'));
+    const roundUp = fraction.length > 2 && Number(fraction[2]) >= 5;
+    const total = (cents + (roundUp ? 1n : 0n)).toString().padStart(3, '0');
+
+    const grouped = total.slice(0, -2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    return `${negative ? '-' : ''}${grouped}.${total.slice(-2)}`;
+};
+
+/** True when the exact amount carries precision below one cent. */
+const hasSubCentPrecision = (amount: string): boolean => {
+    const fraction = amount.split('.')[1] ?? '';
+    return fraction.length > 2 && /[1-9]/.test(fraction.slice(2));
+};
 
 // "2024-03" -> "March 2024"
 const formatPeriod = (period: string | null): string => {
@@ -74,7 +105,7 @@ export const RevenueSummary: React.FC<RevenueSummaryProps> = ({ propertyId = 'pr
     if (error) return <div className="p-4 text-red-500 bg-red-50 rounded-lg">{error}</div>;
     if (!data) return null;
 
-    const displayTotal = Math.round(data.total_revenue * 100) / 100;
+    const displayTotal = formatMoney(data.total_revenue);
 
     return (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition-shadow duration-300">
@@ -93,7 +124,7 @@ export const RevenueSummary: React.FC<RevenueSummaryProps> = ({ propertyId = 'pr
                         </h2>
                         <div className="flex items-baseline gap-2 mt-1">
                             <span className="text-3xl font-bold text-gray-900 tracking-tight">
-                                {data.currency} {displayTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                {data.currency} {displayTotal}
                             </span>
                             {/* Fake trend indicator for premium feel */}
                             <span className="inline-flex items-baseline px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 md:mt-2 lg:mt-0">
@@ -117,14 +148,14 @@ export const RevenueSummary: React.FC<RevenueSummaryProps> = ({ propertyId = 'pr
                     </div>
                 </div>
 
-                {/* Precision Warning Area */}
+                {/* Sub-cent amounts are rounded for display only; show the exact figure. */}
                 <div className="mt-4 h-6">
-                    {Math.abs(data.total_revenue - displayTotal) > 0.000001 && showRaw && (
+                    {hasSubCentPrecision(data.total_revenue) && (
                         <div className="flex items-center text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded">
                             <svg className="h-4 w-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                             </svg>
-                            Precision Mismatch Detected
+                            Rounded for display · exact total {data.currency} {data.total_revenue}
                         </div>
                     )}
                 </div>
