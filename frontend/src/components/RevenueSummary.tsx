@@ -6,7 +6,20 @@ interface RevenueData {
     total_revenue: number;
     currency: string;
     reservations_count: number;
+    period: string | null;
 }
+
+// "2024-03" -> "March 2024"
+const formatPeriod = (period: string | null): string => {
+    if (!period) return 'No reservations';
+    const [year, month] = period.split('-').map(Number);
+    if (!year || !month) return period;
+    return new Date(Date.UTC(year, month - 1, 1)).toLocaleDateString(undefined, {
+        month: 'long',
+        year: 'numeric',
+        timeZone: 'UTC'
+    });
+};
 
 interface RevenueSummaryProps {
     propertyId?: string;
@@ -75,7 +88,9 @@ export const RevenueSummary: React.FC<RevenueSummaryProps> = ({ propertyId = 'pr
             <div className="p-6">
                 <div className="flex items-center justify-between mb-6">
                     <div>
-                        <h2 className="text-sm font-medium text-gray-500 uppercase tracking-wide">Total Revenue</h2>
+                        <h2 className="text-sm font-medium text-gray-500 uppercase tracking-wide">
+                            Total Revenue <span className="text-gray-400 normal-case">· {formatPeriod(data.period)}</span>
+                        </h2>
                         <div className="flex items-baseline gap-2 mt-1">
                             <span className="text-3xl font-bold text-gray-900 tracking-tight">
                                 {data.currency} {displayTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
