@@ -198,6 +198,12 @@ class TenantAwareSupabase:
     async def get_pool_status(self) -> dict:
         """Get connection pool status for monitoring"""
         try:
+            if not settings.has_supabase_credentials:
+                return {
+                    "status": "challenge_mode",
+                    "message": "Supabase connection pool is disabled; using mock Supabase client and local Postgres challenge data.",
+                    "timestamp": time.time(),
+                }
             if not supabase_pool._initialized:
                 await supabase_pool.initialize()
             return supabase_pool.get_pool_status()
@@ -208,6 +214,13 @@ class TenantAwareSupabase:
     async def health_check(self) -> dict:
         """Perform a health check on the database connection"""
         try:
+            if not settings.has_supabase_credentials:
+                return {
+                    "status": "challenge_mode",
+                    "database": "local_postgres",
+                    "supabase_pool": "disabled",
+                    "timestamp": time.time(),
+                }
             if not supabase_pool._initialized:
                 await supabase_pool.initialize()
             
@@ -234,6 +247,8 @@ class TenantAwareSupabase:
     async def execute_with_pool(self, operation_func, *args, **kwargs):
         """Execute an operation using the connection pool"""
         try:
+            if not settings.has_supabase_credentials:
+                raise RuntimeError("Supabase pooled operations are unavailable in Challenge Mode")
             if not supabase_pool._initialized:
                 await supabase_pool.initialize()
             

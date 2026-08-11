@@ -133,6 +133,14 @@ class Settings(BaseSettings):
     redis_db: int = 0
     redis_password: Optional[str] = None
 
+    @property
+    def has_supabase_credentials(self) -> bool:
+        return bool(self.supabase_url and self.supabase_service_role_key)
+
+    @property
+    def is_challenge_mode(self) -> bool:
+        return not self.has_supabase_credentials
+
     def get_hostaway_tokens(self) -> Dict[str, str]:
         """Parse Hostaway tokens from JSON string or fallback to space-separated format"""
         try:

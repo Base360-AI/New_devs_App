@@ -26,6 +26,114 @@ ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'webp', 'gif'}
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
 AVATAR_SIZE = (300, 300)  # Max avatar dimensions
 
+
+def _build_default_profile(user: AuthenticatedUser) -> UserProfile:
+    now_iso = datetime.utcnow().isoformat()
+    return UserProfile(**{
+        'id': f'synthetic-{user.id}',
+        'user_id': user.id,
+        'display_name': (user.email.split('@')[0] if user.email else 'User'),
+        'bio': None,
+        'phone': None,
+        'department': None,
+        'job_title': None,
+        'location': None,
+        'timezone': 'UTC',
+        'language': 'en',
+        'theme': 'light',
+        'avatar_url': None,
+        'created_at': now_iso,
+        'updated_at': now_iso,
+    })
+
+
+def _build_default_preferences(user: AuthenticatedUser) -> UserPreferences:
+    now_iso = datetime.utcnow().isoformat()
+    return UserPreferences(**{
+        'id': f'synthetic-{user.id}',
+        'user_id': user.id,
+        'notification_email': True,
+        'notification_push': True,
+        'notification_desktop': True,
+        'notification_sound': True,
+        'auto_refresh': True,
+        'compact_view': False,
+        'sidebar_collapsed': False,
+        'created_at': now_iso,
+        'updated_at': now_iso,
+    })
+
+
+def _default_profile_create_values(user: AuthenticatedUser) -> Dict[str, Any]:
+    return {
+        'display_name': (user.email.split('@')[0] if user.email else 'User'),
+        'bio': None,
+        'phone': None,
+        'department': None,
+        'job_title': None,
+        'location': None,
+        'timezone': 'UTC',
+        'language': 'en',
+        'theme': 'light',
+        'avatar_url': None,
+    }
+
+
+def _default_preferences_create_values() -> Dict[str, Any]:
+    return {
+        'notification_email': True,
+        'notification_push': True,
+        'notification_desktop': True,
+        'notification_sound': True,
+        'auto_refresh': True,
+        'compact_view': False,
+        'sidebar_collapsed': False,
+    }
+
+
+def _fetch_single_row(table_name: str, user_id: str) -> Optional[Dict[str, Any]]:
+    response = supabase.table(table_name).select('*').eq('user_id', user_id).limit(1).execute()
+    return response.data[0] if response.data else None
+
+
+def _upsert_user_owned_row(
+    table_name: str,
+    user_id: str,
+    defaults: Dict[str, Any],
+    update_data: Dict[str, Any],
+) -> Dict[str, Any]:
+    existing = _fetch_single_row(table_name, user_id)
+    if existing:
+        response = (
+            supabase.table(table_name)
+            .update(update_data)
+            .eq('user_id', user_id)
+            .execute()
+        )
+        if response.data:
+            return response.data[0]
+        refreshed = _fetch_single_row(table_name, user_id)
+        if refreshed:
+            return refreshed
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update {table_name}",
+        )
+
+    create_data = {**defaults, **update_data, 'user_id': user_id}
+    response = supabase.table(table_name).insert(create_data).execute()
+    if response.data:
+        return response.data[0]
+
+    refreshed = _fetch_single_row(table_name, user_id)
+    if refreshed:
+        return refreshed
+
+    raise HTTPException(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        detail=f"Failed to create {table_name}",
+    )
+
 def allowed_file(filename: str) -> bool:
     """Check if the file extension is allowed"""
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -65,41 +173,7 @@ async def get_profile(
     """Get current user's profile, preferences, and notification settings"""
     try:
         logger.info(f"User {user.email} is fetching their profile.")
-        
-        # Create default profile data in case tables don't exist or profile is missing
-        now_iso = datetime.utcnow().isoformat()
-        # Build safe defaults matching the response models when DB rows are missing
-        default_profile = {
-            'id': f'synthetic-{user.id}',
-            'user_id': user.id,
-            'display_name': (user.email.split('@')[0] if user.email else 'User'),
-            'bio': None,
-            'phone': None,
-            'department': None,
-            'job_title': None,
-            'location': None,
-            'timezone': 'UTC',
-            'language': 'en',
-            'theme': 'light',
-            'avatar_url': None,
-            'created_at': now_iso,
-            'updated_at': now_iso,
-        }
-        
-        default_preferences = {
-            'id': f'synthetic-{user.id}',
-            'user_id': user.id,
-            'notification_email': True,
-            'notification_push': True,
-            'notification_desktop': True,
-            'notification_sound': True,
-            'auto_refresh': True,
-            'compact_view': False,
-            'sidebar_collapsed': False,
-            'created_at': now_iso,
-            'updated_at': now_iso,
-        }
-        
+
         profile = None
         preferences = None
         notification_preferences = []
@@ -113,11 +187,11 @@ async def get_profile(
                 profile = UserProfile(**profile_data)
             else:
                 logger.info(f"No profile found for user {user.id}, using default profile")
-                profile = UserProfile(**default_profile)
+                profile = _build_default_profile(user)
         except Exception as profile_error:
             logger.warning(f"Error accessing user_profiles table for user {user.id}: {profile_error}")
             logger.info(f"Using default profile for user {user.id}")
-            profile = UserProfile(**default_profile)
+            profile = _build_default_profile(user)
         
         # Try to get user preferences
         try:
@@ -127,11 +201,11 @@ async def get_profile(
                 preferences = UserPreferences(**preferences_data)
             else:
                 logger.info(f"No preferences found for user {user.id}, using default preferences")
-                preferences = UserPreferences(**default_preferences)
+                preferences = _build_default_preferences(user)
         except Exception as preferences_error:
             logger.warning(f"Error accessing user_preferences table for user {user.id}: {preferences_error}")
             logger.info(f"Using default preferences for user {user.id}")
-            preferences = UserPreferences(**default_preferences)
+            preferences = _build_default_preferences(user)
         
         # Try to get notification preferences
         try:
@@ -192,16 +266,13 @@ async def update_profile(
                 detail="No valid fields to update"
             )
         
-        # Update profile
-        response = supabase.table('user_profiles').update(update_data).eq('user_id', user.id).execute()
-        
-        if not response.data:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Profile not found"
-            )
-        
-        updated_profile = UserProfile(**response.data[0])
+        updated_row = _upsert_user_owned_row(
+            'user_profiles',
+            user.id,
+            _default_profile_create_values(user),
+            update_data,
+        )
+        updated_profile = UserProfile(**updated_row)
         logger.info(f"Successfully updated profile for user {user.id}")
         
         return updated_profile
@@ -233,16 +304,13 @@ async def update_preferences(
                 detail="No valid fields to update"
             )
         
-        # Update preferences
-        response = supabase.table('user_preferences').update(update_data).eq('user_id', user.id).execute()
-        
-        if not response.data:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Preferences not found"
-            )
-        
-        updated_preferences = UserPreferences(**response.data[0])
+        updated_row = _upsert_user_owned_row(
+            'user_preferences',
+            user.id,
+            _default_preferences_create_values(),
+            update_data,
+        )
+        updated_preferences = UserPreferences(**updated_row)
         logger.info(f"Successfully updated preferences for user {user.id}")
         
         return updated_preferences
@@ -373,20 +441,19 @@ async def upload_avatar(
         public_url = supabase.storage.from_('profile-pictures').get_public_url(unique_filename)
         
         # Update user profile with new avatar URL
-        profile_update = supabase.table('user_profiles').update({
-            'avatar_url': public_url
-        }).eq('user_id', user.id).execute()
-        
-        if not profile_update.data:
-            # Clean up uploaded file if profile update fails
+        try:
+            _upsert_user_owned_row(
+                'user_profiles',
+                user.id,
+                _default_profile_create_values(user),
+                {'avatar_url': public_url},
+            )
+        except Exception:
             try:
                 supabase.storage.from_('profile-pictures').remove([unique_filename])
-            except:
+            except Exception:
                 pass
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to update profile with new avatar"
-            )
+            raise
         
         logger.info(f"Successfully uploaded avatar for user {user.id}")
         
