@@ -320,6 +320,10 @@ class SupabaseConnectionPool:
         """Initialize the connection pool"""
         if self._initialized:
             return
+
+        if not settings.has_supabase_credentials:
+            logger.info("Skipping Supabase connection pool initialization in Challenge Mode")
+            return
             
         try:
             logger.info(f"Initializing Supabase connection pool with {self.max_connections} connections")
@@ -574,6 +578,8 @@ supabase_pool = SupabaseConnectionPool()
 
 async def get_supabase_client():
     """Dependency to get a managed Supabase client"""
+    if not settings.has_supabase_credentials:
+        raise RuntimeError("Supabase client requested while running in Challenge Mode")
     if not supabase_pool._initialized:
         await supabase_pool.initialize()
     
