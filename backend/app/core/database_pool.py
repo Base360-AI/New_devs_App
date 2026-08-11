@@ -45,7 +45,7 @@ class DatabasePool:
         if self.engine:
             await self.engine.dispose()
     
-    async def get_session(self) -> AsyncSession:
+    def get_session(self) -> AsyncSession:
         """Get database session from pool"""
         if not self.session_factory:
             raise Exception("Database pool not initialized")
