@@ -281,9 +281,20 @@ export async function fetchBootstrapDataRobust(): Promise<BootstrapFetchResult> 
         3000
       );
       if (profileResponse) {
-        const profile = await profileResponse.json();
-        fallbackData.user = { ...fallbackData.user, ...profile };
-        fallbackData.permissions = profile.permissions || [];
+        const profileBundle = await profileResponse.json();
+        const profile = profileBundle?.profile || null;
+        if (profile) {
+          fallbackData.user = {
+            ...fallbackData.user,
+            id: profile.user_id || fallbackData.user.id,
+            name: profile.display_name || fallbackData.user.name,
+            avatar_url: profile.avatar_url || fallbackData.user.avatar_url,
+            department: profile.department || fallbackData.user.department,
+          };
+        }
+        if (Array.isArray(profileBundle?.permissions)) {
+          fallbackData.permissions = profileBundle.permissions;
+        }
       }
     } catch (error) {
       console.error('[BootstrapFetcher] Failed to get profile:', error);
