@@ -43,7 +43,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Helper function to enrich user object with tenant_id from JWT claims and metadata  
   const enrichUserWithTenant = useCallback((session: Session): EnhancedUser => {
-    const enhancedUser = session.user as EnhancedUser;
+    const enhancedUser = session.user as EnhancedUser;    
 
     // Extract tenant_id with priority: JWT claims > app_metadata > user_metadata
     let tenant_id: string | null = null;
@@ -68,6 +68,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       source = 'user_metadata';
     }
 
+    // Fix: preserve tenant_id set by auth login response
+    if (!tenant_id && enhancedUser.tenant_id) {
+      tenant_id = enhancedUser.tenant_id;
+      source = 'user_property';
+    }
+
     // Add tenant_id as a direct property for backward compatibility
     enhancedUser.tenant_id = tenant_id;
 
@@ -88,7 +94,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Fallback function for cases where we only have user object (like session recovery)
   const enrichUserFallback = useCallback((user: User): EnhancedUser => {
-    const enhancedUser = user as EnhancedUser;
+    const enhancedUser = user as EnhancedUser;    
 
     // Extract tenant_id from metadata only (no JWT claims available)
     let tenant_id: string | null = null;
@@ -103,6 +109,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     else if (enhancedUser.user_metadata?.tenant_id) {
       tenant_id = enhancedUser.user_metadata.tenant_id;
       source = 'user_metadata';
+    }
+
+    else if (enhancedUser.tenant_id) {
+      tenant_id = enhancedUser.tenant_id;
+      source = 'user_property';
     }
 
     // Add tenant_id as a direct property for backward compatibility
