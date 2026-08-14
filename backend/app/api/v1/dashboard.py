@@ -20,6 +20,7 @@ async def get_dashboard_summary(
     # If month and year are provided, calculate monthly revenue (timezone-aware)
     if month is not None and year is not None:
         monthly_revenue = await calculate_monthly_revenue(property_id, month, year, tenant_id)
+        # Preserve decimal precision by using string
         return {
             "property_id": property_id,
             "monthly_revenue": str(monthly_revenue),
