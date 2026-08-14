@@ -43,6 +43,19 @@ export class TenantIsolationError extends Error {
   }
 }
 
+export interface DashboardProperty {
+  id: string;
+  name: string;
+  timezone: string;
+}
+
+export interface DashboardRevenueSummary {
+  property_id: string;
+  total_revenue: string;
+  currency: string;
+  reservations_count: number;
+}
+
 export class SecureAPIClient {
   private static instance: SecureAPIClient;
   private backendUrl: string;
@@ -113,11 +126,17 @@ export class SecureAPIClient {
   /**
    * Gets authentication headers for backend requests
    */
-  private async getAuthHeaders(): Promise<HeadersInit> {
-    // Try cached token first for performance
-    let token = this.cachedToken;
+  private async getAuthHeaders(requestToken?: string): Promise<HeadersInit> {
+    // Keep a request pinned to the session it was authorized under, even if a
+    // different user signs in while the request is in flight.
+    // Direct callers without a pinned token must re-read LocalAuth rather than
+    // trusting a cached bearer token from a previous user.
+    let token = requestToken;
+    if (requestToken === undefined) {
+      token = await this.synchronizeAccessToken() ?? undefined;
+    }
 
-    // If no cached token, get a validated session
+    // If no current token, wait for a validated session.
     if (!token) {
       console.log('[SecureAPI] No cached token, waiting for session or validating...');
       // First, wait briefly for a session to appear to avoid racing login
@@ -139,6 +158,28 @@ export class SecureAPIClient {
       'X-Request-ID': `req_${Date.now()}_${++this.requestCount}`,
       'X-Client-Version': '2.0.0-secure'
     };
+  }
+
+  /**
+   * Synchronize the API client's token and tenant caches with local auth.
+   * Local logout does not revoke its JWT, so cachedToken must never outlive
+   * the session currently held by the auth client.
+   */
+  private async synchronizeAccessToken(): Promise<string | null> {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const currentToken = session?.access_token ?? null;
+
+      if (this.cachedToken !== currentToken) {
+        this.setAccessToken(currentToken);
+      }
+
+      return currentToken;
+    } catch (error) {
+      console.error('[SecureAPI] Failed to synchronize authentication session:', error);
+      this.setAccessToken(null);
+      return null;
+    }
   }
 
   /**
@@ -186,11 +227,11 @@ export class SecureAPIClient {
         // Check if it's a valid JWT
         else if (token.includes('.') && token.split('.').length === 3) {
           const payload = JSON.parse(atob(token.split('.')[1]));
-          extractedTenantId = payload.user_metadata?.tenant_id || payload.tenant_id;
+          extractedTenantId = payload.app_metadata?.tenant_id || payload.user_metadata?.tenant_id || payload.tenant_id;
         }
 
         if (extractedTenantId) {
-          // Validate tenant ID format (should be UUID)
+          // Validate the opaque tenant ID before using it in an in-memory cache key.
           if (this.isValidTenantId(extractedTenantId)) {
             this.cachedTenantId = extractedTenantId;
             return this.cachedTenantId;
@@ -224,7 +265,7 @@ export class SecureAPIClient {
       if (token) {
         const payload = JSON.parse(atob(token.split('.')[1]));
         // Use user sub (unique ID) + email as session key for isolation
-        const userSub = payload.sub;
+        const userSub = payload.sub || payload.id;
         const userEmail = payload.email;
 
         if (userSub && userEmail) {
@@ -243,9 +284,11 @@ export class SecureAPIClient {
    * Validate tenant ID format for security
    */
   private isValidTenantId(tenantId: string): boolean {
-    // Check for UUID format (basic validation)
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    return typeof tenantId === 'string' && tenantId.length > 0 && uuidRegex.test(tenantId);
+    const opaqueIdRegex = /^[A-Za-z0-9_-]+$/;
+    return typeof tenantId === 'string' &&
+      tenantId.length > 0 &&
+      tenantId.length <= 128 &&
+      opaqueIdRegex.test(tenantId);
   }
 
   /**
@@ -548,12 +591,16 @@ export class SecureAPIClient {
     const timestamp = new Date().toISOString();
     console.log(`[API REQUEST] ${timestamp} - ${method} ${endpoint}`);
 
+    // Validate the current local session before consulting any token-derived
+    // tenant cache or request cache.
+    const requestToken = await this.synchronizeAccessToken();
+
     // Create a tenant-isolated unique key for this request
     const tenantId = await this.getTenantId();
 
     if (!tenantId) {
       console.warn(`[API SECURITY] No valid tenant ID - bypassing cache for ${endpoint}`);
-      return this.executeRequest<T>(endpoint, options, null, false);
+      return this.executeRequest<T>(endpoint, options, null, false, requestToken ?? undefined);
     }
 
     // Generate cache key that includes query parameters to prevent cache collisions
@@ -599,7 +646,7 @@ export class SecureAPIClient {
     }
 
     // Create the request promise
-    const requestPromise = this.executeRequest<T>(endpoint, options, requestKey, isGetRequest);
+    const requestPromise = this.executeRequest<T>(endpoint, options, requestKey, isGetRequest, requestToken ?? undefined);
 
     // Store pending request for deduplication (only with valid cache key)
     if (isGetRequest && requestKey) {
@@ -616,7 +663,8 @@ export class SecureAPIClient {
     endpoint: string,
     options: RequestInit,
     requestKey: string | null,
-    isGetRequest: boolean
+    isGetRequest: boolean,
+    requestToken?: string
   ): Promise<T> {
     const MAX_RETRIES = 3; // Increased for better resilience
     const RETRY_DELAY_BASE = 1000; // Reasonable delay for retries
@@ -624,7 +672,7 @@ export class SecureAPIClient {
 
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       try {
-        const headers = await this.getAuthHeaders();
+        const headers = await this.getAuthHeaders(requestToken);
         const url = `${this.backendUrl}${endpoint}`;
 
 
@@ -686,6 +734,7 @@ export class SecureAPIClient {
             if (refreshedSession?.access_token) {
               console.log('[SecureAPI] Session refreshed, will retry with new token');
               this.cachedToken = refreshedSession.access_token;
+              requestToken = refreshedSession.access_token;
 
               // Only retry if we haven't exceeded max attempts
               if (attempt < MAX_RETRIES) {
@@ -1449,23 +1498,22 @@ export class SecureAPIClient {
   }
 
   // ============= DASHBOARD API =============
-  /**
-   * Get dashboard summary with optional simulation header
-   */
-  async getDashboardSummary(propertyId: string, options?: { simulatedTenant?: string, timestamp?: number }) {
-    const queryParams = new URLSearchParams({ property_id: propertyId });
-    if (options?.timestamp) {
-      queryParams.append('_t', options.timestamp.toString());
-    }
+  async getDashboardProperties(): Promise<DashboardProperty[]> {
+    return this.request<DashboardProperty[]>('/api/v1/dashboard/properties');
+  }
 
-    const requestOptions: RequestInit = {};
-    if (options?.simulatedTenant) {
-      requestOptions.headers = {
-        'X-Simulated-Tenant': options.simulatedTenant
-      };
-    }
+  async getDashboardSummary(
+    propertyId: string,
+    year: number,
+    month: number
+  ): Promise<DashboardRevenueSummary> {
+    const queryParams = new URLSearchParams({
+      property_id: propertyId,
+      year: year.toString(),
+      month: month.toString()
+    });
 
-    return this.request<any>(`/api/v1/dashboard/summary?${queryParams}`, requestOptions);
+    return this.request<DashboardRevenueSummary>(`/api/v1/dashboard/summary?${queryParams}`);
   }
 
   async uploadCompanyLogo(logo_url: string) {

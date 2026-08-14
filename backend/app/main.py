@@ -90,6 +90,16 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting up...")
 
+    # Initialize the shared SQLAlchemy pool used by dashboard queries.
+    try:
+        from .core.database_pool import db_pool
+
+        await db_pool.initialize()
+        logger.info("Database connection pool initialized")
+    except Exception as e:
+        logger.error(f"Database pool initialization failed: {e}")
+        # Keep the API available for health/auth; dashboard requests fail safely.
+
     # Initialize Supabase connection pool
     try:
         from .core.supabase_connection_pool import supabase_pool
@@ -128,6 +138,14 @@ async def lifespan(app: FastAPI):
     logger.info("Async processor shutdown completed")
 
     # Close connection pool
+    try:
+        from .core.database_pool import db_pool
+
+        await db_pool.close()
+        logger.info("Database connection pool closed")
+    except Exception as e:
+        logger.warning(f"Error closing database pool: {e}")
+
     try:
         from .core.supabase_connection_pool import supabase_pool
 
