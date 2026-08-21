@@ -12,6 +12,7 @@
 import { supabase } from './supabase';
 import { sessionManager } from '../utils/sessionManager';
 import { withRetry, handleApiError, classifyError } from '../utils/apiErrorHandler';
+import { buildDashboardSummaryRequest } from './dashboardSummaryRequest';
 
 // Get backend URL with fallback for misconfigured production environments
 const getBackendUrl = () => {
@@ -1452,20 +1453,17 @@ export class SecureAPIClient {
   /**
    * Get dashboard summary with optional simulation header
    */
-  async getDashboardSummary(propertyId: string, options?: { simulatedTenant?: string, timestamp?: number }) {
-    const queryParams = new URLSearchParams({ property_id: propertyId });
-    if (options?.timestamp) {
-      queryParams.append('_t', options.timestamp.toString());
-    }
-
+  async getDashboardSummary(
+    propertyId: string,
+    options?: { simulatedTenant?: string; timestamp?: number; tenantId?: string; year?: number; month?: number },
+  ) {
+    const { url, headers } = buildDashboardSummaryRequest(propertyId, options);
     const requestOptions: RequestInit = {};
-    if (options?.simulatedTenant) {
-      requestOptions.headers = {
-        'X-Simulated-Tenant': options.simulatedTenant
-      };
+    if (Object.keys(headers).length > 0) {
+      requestOptions.headers = headers;
     }
 
-    return this.request<any>(`/api/v1/dashboard/summary?${queryParams}`, requestOptions);
+    return this.request<any>(url, requestOptions);
   }
 
   async uploadCompanyLogo(logo_url: string) {

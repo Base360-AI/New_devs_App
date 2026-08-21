@@ -1,5 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { SecureAPI } from '../lib/secureApi';
+import {
+    clearRevenueCacheForTenant,
+    getRevenueCache,
+    setRevenueCache,
+} from '../lib/revenueCache';
+import { displayTimezone, formatInUserTimezone } from '../lib/userTimezone';
 
 interface RevenueData {
     property_id: string;
@@ -10,27 +16,50 @@ interface RevenueData {
 
 interface RevenueSummaryProps {
     propertyId?: string;
-    debugTenant?: string; 
+    debugTenant?: string;
+    sessionTenant?: string;
+    profileTimezone?: string | null;
+    propertyTimezone?: string;
     showRaw?: boolean;
 }
 
-export const RevenueSummary: React.FC<RevenueSummaryProps> = ({ propertyId = 'prop-001', debugTenant, showRaw }) => {
+export const RevenueSummary: React.FC<RevenueSummaryProps> = ({
+    propertyId = 'prop-001',
+    debugTenant,
+    sessionTenant,
+    profileTimezone,
+    showRaw,
+}) => {
     const [data, setData] = useState<RevenueData | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
-
-    const activeTenant = debugTenant || 'candidate';
+    const previousTenantRef = useRef<string | undefined>();
 
     useEffect(() => {
         const fetchRevenue = async () => {
+            if (previousTenantRef.current && previousTenantRef.current !== sessionTenant) {
+                clearRevenueCacheForTenant(previousTenantRef.current);
+            }
+            previousTenantRef.current = sessionTenant;
+
             setLoading(true);
             try {
-                // Use SecureAPI to handle authentication automatically
-                // We pass the simulatedTenant option which SecureAPI will attach as a header
+                if (sessionTenant) {
+                    const cached = getRevenueCache(propertyId, sessionTenant) as RevenueData | undefined;
+                    if (cached) {
+                        setData(cached);
+                        return;
+                    }
+                }
+
                 const response = await SecureAPI.getDashboardSummary(propertyId, {
-                    simulatedTenant: activeTenant,
-                    timestamp: Date.now()
+                    timestamp: Date.now(),
+                    tenantId: sessionTenant,
+                    ...(debugTenant ? { simulatedTenant: debugTenant } : {}),
                 });
+                if (sessionTenant) {
+                    setRevenueCache(propertyId, sessionTenant, response);
+                }
                 setData(response);
             } catch (err) {
                 setError('Failed to load revenue data');
@@ -41,7 +70,7 @@ export const RevenueSummary: React.FC<RevenueSummaryProps> = ({ propertyId = 'pr
         };
 
         fetchRevenue();
-    }, [propertyId, activeTenant]);
+    }, [propertyId, sessionTenant, debugTenant]);
 
     if (loading) {
         return (
@@ -62,6 +91,7 @@ export const RevenueSummary: React.FC<RevenueSummaryProps> = ({ propertyId = 'pr
     if (!data) return null;
 
     const displayTotal = Math.round(data.total_revenue * 100) / 100;
+    const clockZone = displayTimezone(profileTimezone);
 
     return (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition-shadow duration-300">
@@ -77,7 +107,7 @@ export const RevenueSummary: React.FC<RevenueSummaryProps> = ({ propertyId = 'pr
                     <div>
                         <h2 className="text-sm font-medium text-gray-500 uppercase tracking-wide">Total Revenue</h2>
                         <div className="flex items-baseline gap-2 mt-1">
-                            <span className="text-3xl font-bold text-gray-900 tracking-tight">
+                            <span data-testid="revenue-total" className="text-3xl font-bold text-gray-900 tracking-tight">
                                 {data.currency} {displayTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </span>
                             {/* Fake trend indicator for premium feel */}
@@ -88,6 +118,12 @@ export const RevenueSummary: React.FC<RevenueSummaryProps> = ({ propertyId = 'pr
                                 12%
                             </span>
                         </div>
+                        <p data-testid="display-timezone" className="text-xs text-gray-400 mt-2">
+                            Times shown in {clockZone}
+                            {showRaw && (
+                                <> · {formatInUserTimezone('2024-02-29T23:30:00.000Z', profileTimezone)}</>
+                            )}
+                        </p>
                     </div>
                 </div>
 

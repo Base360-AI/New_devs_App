@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
@@ -93,6 +94,13 @@ export default defineConfig({
         changeOrigin: true,
       },
     },
+  },
+  test: {
+    environment: "jsdom",
+    globals: true,
+    pool: "threads",
+    include: ["tests/**/*.spec.ts", "tests/**/*.spec.tsx"],
+    setupFiles: ["tests/setup.ts"],
   },
   // Define global variables to avoid undefined errors
   define: {
