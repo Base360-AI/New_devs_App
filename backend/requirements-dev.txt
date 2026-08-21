@@ -1,0 +1,5 @@
+fakeredis>=2.26.0
+pytest>=8.0.0
+pytest-asyncio>=0.24.0
+pytest-bdd>=8.0.0
+redis>=5.0.0

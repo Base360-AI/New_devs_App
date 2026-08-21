@@ -10,3 +10,6 @@ pre-commit:
 
 uv-install:
 	cd backend && uv sync
+
+test:
+	cd backend && python -m pytest -q
