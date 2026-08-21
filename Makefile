@@ -12,4 +12,4 @@ uv-install:
 	cd backend && uv sync
 
 test:
-	cd backend && python -m pytest -q
+	cd backend && uv run pytest -q
