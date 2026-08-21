@@ -69,7 +69,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     // Add tenant_id as a direct property for backward compatibility
-    enhancedUser.tenant_id = tenant_id;
+    if (tenant_id) {
+      enhancedUser.tenant_id = tenant_id;
+    }
 
     if (import.meta.env.DEV) {
       console.log('🔒 TENANT_RESOLUTION: Enhanced user object', {
@@ -106,7 +108,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     // Add tenant_id as a direct property for backward compatibility
-    enhancedUser.tenant_id = tenant_id;
+    if (tenant_id) {
+      enhancedUser.tenant_id = tenant_id;
+    }
 
     if (import.meta.env.DEV) {
       console.log('🔒 TENANT_RESOLUTION (fallback): User object without session', {
