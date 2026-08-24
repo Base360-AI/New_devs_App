@@ -1,6 +1,6 @@
 /**
  * Robust Bootstrap Data Fetcher
- * 
+ *
  * This module provides a bulletproof mechanism for fetching bootstrap data
  * with multiple fallback strategies to ensure the app always loads.
  */
@@ -22,7 +22,7 @@ function getBackendUrl(): string {
   if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
     return 'http://localhost:8000';
   }
-  
+
   // For production, use relative URL first (most likely to work)
   // This avoids CORS issues and works with any domain
   return '';
@@ -43,8 +43,8 @@ function createMinimalFallbackData(session: any): any {
     },
     tenant: null, // Don't provide default - let backend resolve
     company_settings: null, // Don't provide default - let backend resolve
-    permissions: user?.app_metadata?.role === 'admin' 
-      ? [{ section: '*', action: '*' }] 
+    permissions: user?.app_metadata?.role === 'admin'
+      ? [{ section: '*', action: '*' }]
       : [],
     modules: [],
     smart_views: {},
@@ -67,13 +67,13 @@ function createMinimalFallbackData(session: any): any {
  * Attempts to fetch from a single endpoint with timeout
  */
 async function fetchFromEndpoint(
-  url: string, 
-  token: string, 
+  url: string,
+  token: string,
   timeoutMs: number = 5000
 ): Promise<Response | null> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-  
+
   try {
     const timestamp = new Date().toISOString();
     console.log(`[BOOTSTRAP API] ${timestamp} - Attempting to fetch from: ${url}`);
@@ -86,9 +86,9 @@ async function fetchFromEndpoint(
       },
       signal: controller.signal
     });
-    
+
     clearTimeout(timeoutId);
-    
+
     if (response.ok) {
       console.log(`[BootstrapFetcher] ✅ Success from: ${url}`);
       return response;
@@ -112,10 +112,10 @@ async function fetchFromEndpoint(
  */
 async function tryMultipleEndpoints(token: string): Promise<any | null> {
   const baseUrl = getBackendUrl();
-  
+
   // Order endpoints by likelihood of success
   // Relative URLs work best in production to avoid CORS
-  const endpoints = baseUrl 
+  const endpoints = baseUrl
     ? [
         // Development - try configured URL first
         `${baseUrl}/api/v1/bootstrap`,
@@ -129,7 +129,7 @@ async function tryMultipleEndpoints(token: string): Promise<any | null> {
         'https://pms.base360.ai/api/v1/bootstrap',
         'https://pms.base360.ai/api/v1/auth/bootstrap'
       ];
-  
+
   // Try first endpoint with longer timeout
   const firstResponse = await fetchFromEndpoint(endpoints[0], token, 8000);
   if (firstResponse) {
@@ -141,7 +141,7 @@ async function tryMultipleEndpoints(token: string): Promise<any | null> {
       console.error(`[BootstrapFetcher] Failed to parse JSON from: ${endpoints[0]}`, error);
     }
   }
-  
+
   // Try remaining endpoints with shorter timeout
   for (let i = 1; i < endpoints.length; i++) {
     const response = await fetchFromEndpoint(endpoints[i], token, 3000);
@@ -155,22 +155,22 @@ async function tryMultipleEndpoints(token: string): Promise<any | null> {
       }
     }
   }
-  
+
   return null;
 }
 
 /**
  * Load data from cache if available
  */
-async function loadFromCache(tenantId: string): Promise<any | null> {
+async function loadFromCache(userId: string): Promise<any | null> {
   try {
-    const cacheKey = `app_bootstrap_data_${tenantId}`;
+    const cacheKey = `app_bootstrap_data_${userId}`;
     const cached = localStorage.getItem(cacheKey);
-    
+
     if (cached) {
       const parsed = JSON.parse(cached);
       const age = Date.now() - parsed.timestamp;
-      
+
       // Accept cache up to 30 minutes old (data doesn't change frequently)
       // This ensures instant loading on page refresh
       if (age < 30 * 60 * 1000) {
@@ -183,16 +183,16 @@ async function loadFromCache(tenantId: string): Promise<any | null> {
   } catch (error) {
     console.error('[BootstrapFetcher] Failed to load from cache:', error);
   }
-  
+
   return null;
 }
 
 /**
  * Save data to cache
  */
-function saveToCache(tenantId: string, data: any): void {
+function saveToCache(userId: string, data: any): void {
   try {
-    const cacheKey = `app_bootstrap_data_${tenantId}`;
+    const cacheKey = `app_bootstrap_data_${userId}`;
     localStorage.setItem(cacheKey, JSON.stringify({
       data,
       timestamp: Date.now()
@@ -208,12 +208,12 @@ function saveToCache(tenantId: string, data: any): void {
  */
 export async function fetchBootstrapDataRobust(): Promise<BootstrapFetchResult> {
   const startTime = performance.now();
-  
+
   try {
     // Step 1: Get session
     console.log('[BootstrapFetcher] Starting robust bootstrap fetch...');
     const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-    
+
     if (sessionError || !session) {
       console.warn('[BootstrapFetcher] No session available, using minimal fallback');
       return {
@@ -223,43 +223,38 @@ export async function fetchBootstrapDataRobust(): Promise<BootstrapFetchResult> 
         responseTime: performance.now() - startTime
       };
     }
-    
-    // Step 2: Try to load from cache using user ID as key (tenant-agnostic)
-    // The actual tenant_id will be in the cached data itself
-    const userId = session.user?.id || 'unknown';
-    const cachedData = await loadFromCache(userId);
+
+    // Step 2: Try to load from cache, keyed strictly on this user's id.
+    // Without an id there is nothing safe to key on, so we skip the cache
+    // entirely rather than falling back to a key every user would share.
+    const userId = session.user?.id || null;
+    const cachedData = userId ? await loadFromCache(userId) : null;
     if (cachedData) {
       console.log('[BootstrapFetcher] Using cached data for instant load');
-      
+
       // Fire background refresh without blocking
       setTimeout(() => {
         tryMultipleEndpoints(session.access_token).then(freshData => {
-          if (freshData) {
-            // Save with the actual tenant_id from the response
-            const actualTenantId = freshData?.metadata?.tenant_id || userId;
-            saveToCache(actualTenantId, freshData);
+          if (freshData && userId) {
+            saveToCache(userId, freshData);
             console.log('[BootstrapFetcher] Background refresh completed');
           }
         }).catch(err => {
           console.error('[BootstrapFetcher] Background refresh failed:', err);
         });
       }, 100);
-      
+
       return {
         data: cachedData,
         source: 'cache',
         responseTime: performance.now() - startTime
       };
     }
-    
+
     // Step 3: Try multiple API endpoints
     const apiData = await tryMultipleEndpoints(session.access_token);
     if (apiData) {
-      // Save with the actual tenant_id from the response
-      const actualTenantId = apiData?.metadata?.tenant_id || userId;
-      saveToCache(actualTenantId, apiData);
-      // ALSO save with userId so AppContext can find it immediately after sign-in
-      if (actualTenantId !== userId) {
+      if (userId) {
         saveToCache(userId, apiData);
       }
       return {
@@ -268,11 +263,11 @@ export async function fetchBootstrapDataRobust(): Promise<BootstrapFetchResult> 
         responseTime: performance.now() - startTime
       };
     }
-    
+
     // Step 4: Try to construct data from individual endpoints
     console.log('[BootstrapFetcher] Bootstrap endpoint failed, trying individual endpoints...');
     const fallbackData = createMinimalFallbackData(session);
-    
+
     // Try to get user profile
     try {
       const profileResponse = await fetchFromEndpoint(
@@ -288,7 +283,7 @@ export async function fetchBootstrapDataRobust(): Promise<BootstrapFetchResult> 
     } catch (error) {
       console.error('[BootstrapFetcher] Failed to get profile:', error);
     }
-    
+
     // Try to get modules
     try {
       const modulesResponse = await fetchFromEndpoint(
@@ -303,20 +298,22 @@ export async function fetchBootstrapDataRobust(): Promise<BootstrapFetchResult> 
     } catch (error) {
       console.error('[BootstrapFetcher] Failed to get modules:', error);
     }
-    
-    // Save partial data to cache using userId (tenantId is not available in this scope)
-    saveToCache(userId, fallbackData);
-    
+
+    // Save partial data to cache using the same user-scoped key as the read
+    if (userId) {
+      saveToCache(userId, fallbackData);
+    }
+
     return {
       data: fallbackData,
       source: 'fallback',
       error: 'Bootstrap endpoint unavailable, using fallback data',
       responseTime: performance.now() - startTime
     };
-    
+
   } catch (error: any) {
     console.error('[BootstrapFetcher] Unexpected error:', error);
-    
+
     // Last resort: return absolute minimum data
     return {
       data: createMinimalFallbackData(null),
@@ -337,15 +334,15 @@ export async function prefetchBootstrapData(token?: string): Promise<void> {
       if (!session) return;
       token = session.access_token;
     }
-    
+
     // Fire and forget - don't wait for response
     tryMultipleEndpoints(token).then(async data => {
       if (data && token) {
         const { data: { session } } = await supabase.auth.getSession();
         if (session) {
-          // Use the tenant_id from the API response, not from app_metadata
-          const actualTenantId = data?.metadata?.tenant_id || session.user?.id || 'default';
-          saveToCache(actualTenantId, data);
+          if (session.user?.id) {
+            saveToCache(session.user.id, data);
+          }
         }
       }
     });

@@ -31,7 +31,7 @@ class TenantAwareSupabase:
         self._connection_timeout = getattr(settings, 'supabase_connection_timeout', 30.0)
         self._connection_start_times = {}
         self._cleanup_threshold = 60.0  # Force cleanup connections older than 60 seconds
-        
+
         # CIRCUIT BREAKER: Prevent cascading failures
         self._circuit_breaker_threshold = 10  # Open circuit after 10 failures
         self._circuit_breaker_timeout = 60  # Keep circuit open for 60 seconds
@@ -75,7 +75,7 @@ class TenantAwareSupabase:
             conn_id for conn_id, start_time in self._connection_start_times.items()
             if current_time - start_time > self._cleanup_threshold
         ]
-        
+
         if stale_connections:
             logger.warning(f"Cleaning up {len(stale_connections)} stale connections")
             for conn_id in stale_connections:
@@ -87,7 +87,7 @@ class TenantAwareSupabase:
     def _check_circuit_breaker(self):
         """Check circuit breaker state and manage failures"""
         current_time = time.time()
-        
+
         # Check if circuit should be closed (reset after timeout)
         if self._circuit_open and self._circuit_opened_at:
             if current_time - self._circuit_opened_at > self._circuit_breaker_timeout:
@@ -95,53 +95,53 @@ class TenantAwareSupabase:
                 self._circuit_open = False
                 self._circuit_opened_at = None
                 self._failure_count = 0  # Reset failure count
-        
+
         # Open circuit if failure threshold exceeded
         if not self._circuit_open and self._failure_count >= self._circuit_breaker_threshold:
             logger.error(f"Circuit breaker OPENED after {self._failure_count} failures")
             self._circuit_open = True
             self._circuit_opened_at = current_time
-        
+
         return self._circuit_open
 
     # PostgREST entry points with connection limiting and timeout handling
     def table(self, name: str):
         connection_id = id(self)
         start_time = time.time()
-        
+
         # CIRCUIT BREAKER: Fail fast if circuit is open
         if self._check_circuit_breaker():
             raise HTTPException(
                 status_code=503,
                 detail="Database circuit breaker is OPEN due to recent failures. Please try again in a moment."
             )
-        
+
         self._cleanup_stale_connections()
-        
+
         # Quick connection limiting with timeout
         if self._active_connections >= self._max_concurrent:
             logger.warning(f"Connection limit reached ({self._active_connections}/{self._max_concurrent})")
             # Use shorter delay to prevent request pileup
             time.sleep(0.05)
-            
+
             # If still at limit after delay, raise exception instead of blocking
             if self._active_connections >= self._max_concurrent:
                 raise HTTPException(
-                    status_code=503, 
+                    status_code=503,
                     detail="Database connection pool exhausted. Please try again in a moment."
                 )
-        
+
         self._active_connections += 1
         self._connection_start_times[connection_id] = start_time
-        
+
         try:
             self._apply_auth()
-            
+
             # Apply connection timeout
             result = self._base.table(name)
             self._failure_count = 0  # Reset on success
             return result
-            
+
         except Exception as e:
             self._failure_count += 1
             self._last_failure = time.time()
@@ -160,7 +160,7 @@ class TenantAwareSupabase:
         if self._active_connections >= self._max_concurrent:
             logger.warning(f"Connection limit reached ({self._active_connections}/{self._max_concurrent})")
             time.sleep(0.1)  # Brief delay
-            
+
         self._active_connections += 1
         try:
             self._apply_auth()
@@ -194,7 +194,7 @@ class TenantAwareSupabase:
     def __getattr__(self, item: str) -> Any:
         # Fallback passthrough for any other attributes
         return getattr(self._base, item)
-    
+
     async def get_pool_status(self) -> dict:
         """Get connection pool status for monitoring"""
         try:
@@ -204,20 +204,20 @@ class TenantAwareSupabase:
         except Exception as e:
             logger.error(f"Failed to get pool status: {e}")
             return {"error": str(e)}
-    
+
     async def health_check(self) -> dict:
         """Perform a health check on the database connection"""
         try:
             if not supabase_pool._initialized:
                 await supabase_pool.initialize()
-            
+
             # Test a simple query
             async with supabase_pool.get_client() as client:
                 # Simple health check query
                 result = client.table('users').select('id').limit(1)
-                
+
             pool_status = supabase_pool.get_pool_status()
-            
+
             return {
                 "status": "healthy",
                 "connection_pool": pool_status,
@@ -230,22 +230,22 @@ class TenantAwareSupabase:
                 "error": str(e),
                 "timestamp": time.time()
             }
-    
+
     async def execute_with_pool(self, operation_func, *args, **kwargs):
         """Execute an operation using the connection pool"""
         try:
             if not supabase_pool._initialized:
                 await supabase_pool.initialize()
-            
+
             async with supabase_pool.get_client() as client:
                 # Apply tenant context to the pooled client
                 self._apply_auth_to_client(client)
                 return await operation_func(client, *args, **kwargs)
-                
+
         except Exception as e:
             logger.error(f"Pooled operation failed: {e}")
             raise
-    
+
     def _apply_auth_to_client(self, client: Client):
         """Apply the current request's bearer token to a specific client"""
         token = get_user_token()
@@ -284,7 +284,7 @@ try:
     else:
         # Fallback mode: Supabase client is not available.
         logger.warning("Supabase URL/Key not set. Running in Challenge Mode (Mock Client).")
-        
+
         class MockUser:
             def __init__(self, email="candidate@propertyflow.com", role="admin", name="Candidate User"):
                 self.id = hashlib.md5(email.encode()).hexdigest()
@@ -304,7 +304,7 @@ try:
                 # Validate the mock token used by frontend
                 if token == "mock-token-123":
                     return MockResponse(user=MockUser())
-                
+
                 # Try to decode the JWT token generated by our login endpoint
                 try:
                     # Parse payload in fallback mode.
@@ -318,14 +318,14 @@ try:
                                 return MockResponse(user=u)
                 except Exception:
                     pass
-                    
+
                 # Return empty response (sets user=None) which simulates invalid token
                 return MockResponse(user=None)
-            
+
             @property
             def admin(self):
                 return self
-                
+
             def list_users(self):
                 # Return a list of mock users to support login testing
                 return [
@@ -351,17 +351,21 @@ try:
             def __getattr__(self, name):
                 # Return self for chaining (e.g. table().select())
                 return lambda *args, **kwargs: self
-            
+
             def table(self, *args):
                  return self
-            
+
             def select(self, *args):
                 return self
-            
+
             def eq(self, *args):
                 return self
-                
+
             def in_(self, *args):
+                return self
+
+            @property
+            def not_(self):
                 return self
 
             def execute(self):

@@ -1,11 +1,11 @@
 /**
  * SECURE MULTI-TENANT API CLIENT
- * 
+ *
  * This module provides a centralized, secure API client that ensures ALL database
  * queries go through the backend with proper tenant isolation.
- * 
+ *
  * Always use this SecureAPI client instead.
- * 
+ *
  * @security This prevents cross-tenant data leakage by enforcing backend-only database access
  */
 
@@ -186,7 +186,10 @@ export class SecureAPIClient {
         // Check if it's a valid JWT
         else if (token.includes('.') && token.split('.').length === 3) {
           const payload = JSON.parse(atob(token.split('.')[1]));
-          extractedTenantId = payload.user_metadata?.tenant_id || payload.tenant_id;
+          extractedTenantId =
+            payload.app_metadata?.tenant_id ||
+            payload.user_metadata?.tenant_id ||
+            payload.tenant_id;
         }
 
         if (extractedTenantId) {
@@ -243,9 +246,8 @@ export class SecureAPIClient {
    * Validate tenant ID format for security
    */
   private isValidTenantId(tenantId: string): boolean {
-    // Check for UUID format (basic validation)
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    return typeof tenantId === 'string' && tenantId.length > 0 && uuidRegex.test(tenantId);
+    // no need for uuid
+    return typeof tenantId === 'string' && tenantId.trim().length > 0;
   }
 
   /**
@@ -1181,7 +1183,7 @@ export class SecureAPIClient {
     });
   }
 
-  // Alias for compatibility  
+  // Alias for compatibility
   async deleteAppliance(propertyId: string, applianceId: string) {
     return this.deletePropertyAppliance(propertyId, applianceId);
   }
