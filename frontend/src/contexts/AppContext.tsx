@@ -92,7 +92,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [departmentsState, setDepartmentsState] = useState<any[]>([]);
   const [isAdminFromMe, setIsAdminFromMe] = useState<boolean | null>(null);
   const [hasInitialRefresh, setHasInitialRefresh] = useState(false);
-  const [forceRefreshFlag, setForceRefreshFlag] = useState(false); 
+  const [forceRefreshFlag, setForceRefreshFlag] = useState(false);
 
   /* ---------- Modules as Set ---------- */
   const modules = useMemo(() => {
@@ -116,7 +116,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.log('[AppContext] Using is_admin from /me endpoint:', isAdminFromMe);
       return isAdminFromMe;
     }
-    
+
     // Fallback checks if /me hasn't loaded yet
     const list = permState.length > 0 ? permState : (auth.permissions || []);
     if (list.some(p => p.section === '*' && p.action === '*')) return true;
@@ -158,19 +158,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         // 1. Bootstrap local cache
         if (!permState.length) {
           try {
-            let bestKey: string | null = null;
-            let bestTs = 0;
-            for (let i = 0; i < localStorage.length; i++) {
-              const k = localStorage.key(i) || '';
-              if (k.startsWith('app_bootstrap_data_')) {
-                const raw = localStorage.getItem(k);
-                if (!raw) continue;
-                const parsed = JSON.parse(raw);
-                const ts = parsed?.timestamp || 0;
-                if (ts > bestTs) { bestTs = ts; bestKey = k; }
-              }
-            }
-            if (bestKey) {
+            // Only ever hydrate from THIS user's cache entry. Scanning for the
+            // newest app_bootstrap_data_* key loaded whichever entry was freshest,
+            // which could be another tenant's bootstrap data.
+            const bestKey = auth.user?.id ? `app_bootstrap_data_${auth.user.id}` : null;
+            if (bestKey && localStorage.getItem(bestKey)) {
               const raw = localStorage.getItem(bestKey)!;
               const parsed = JSON.parse(raw);
               const data = parsed?.data || {};
@@ -184,20 +176,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                   : (Array.isArray(data?.metadata?.departments)
                       ? data.metadata.departments
                       : []);
-              if (!cancelled) {
+
+              const tenantMismatch = !!(auth.tenantId && tidFromData && tidFromData !== auth.tenantId);
+              if (tenantMismatch) {
+                console.warn('[AppContext] - discarding cache', {
+                  jwt_tenant_id: auth.tenantId,
+                  bootstrap_tenant_id: tidFromData
+                });
+                localStorage.removeItem(bestKey);
+              }
+
+              if (!cancelled && !tenantMismatch) {
                 if (perms.length) setPermState(perms);
-                
+
                 // ✅ Apply same tenant prioritization logic for bootstrap data
                 if (tidFromData) {
                   const jwtTenantId = auth.tenantId;
                   const userEmail = auth.user?.email;
-                  
+
                   const emergencyTenantOverrides: Record<string, string> = {
                     'noam@stayhomely.de': '5a382f72-aec3-40f1-9063-89476ae00669', // Homely
                   };
-                  
+
                   let finalTenantId = jwtTenantId || tidFromData;
-                  
+
                   if (userEmail && emergencyTenantOverrides[userEmail]) {
                     const correctTenant = emergencyTenantOverrides[userEmail];
                     if (finalTenantId !== correctTenant) {
@@ -209,7 +211,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                       finalTenantId = correctTenant;
                     }
                   }
-                  
+
                   if (jwtTenantId && tidFromData !== jwtTenantId) {
                     console.warn('[AppContext] 🚨 BOOTSTRAP TENANT CONFLICT:', {
                       jwt_tenant_id: jwtTenantId,
@@ -218,10 +220,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                       resolution: emergencyTenantOverrides[userEmail || ''] ? 'emergency_override' : 'jwt_priority'
                     });
                   }
-                  
+
                   setResolvedTenantId(finalTenantId);
                 }
-                
+
                 if (mods.length) setModulesState(mods);
                 if (company) setCompanySettingsState(company);
                 if (depts.length) setDepartmentsState(depts);
@@ -241,7 +243,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         // 2. Always fetch fresh permissions on page load, use cache only for subsequent loads
         const shouldForceRefresh = !hasInitialRefresh || forceRefreshFlag;
         const shouldUseCache = hasInitialRefresh && !forceRefreshFlag && !permState.length;
-        
+
         // Load from cache only if we've already done initial refresh in this session
         if (shouldUseCache) {
           const tid = resolvedTenantId || auth.tenantId || 'unknown';
@@ -270,15 +272,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               const jwtTenantId = auth.tenantId;
               const apiTenantId = me.tenant_id;
               const userEmail = auth.user?.email;
-              
+
               // Since backend diagnosis shows DB is correct but JWT may have wrong tenant metadata
               const emergencyTenantOverrides: Record<string, string> = {
                 'noam@stayhomely.de': '5a382f72-aec3-40f1-9063-89476ae00669', // Homely
                 // Add other users here if needed
               };
-              
+
               let finalTenantId = jwtTenantId || apiTenantId || null;
-              
+
               if (userEmail && emergencyTenantOverrides[userEmail]) {
                 const correctTenant = emergencyTenantOverrides[userEmail];
                 if (finalTenantId !== correctTenant) {
@@ -291,7 +293,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                   finalTenantId = correctTenant;
                 }
               }
-              
+
               if (jwtTenantId && apiTenantId && jwtTenantId !== apiTenantId) {
                 console.warn('[AppContext] 🚨 TENANT CONFLICT DETECTED:', {
                   jwt_tenant_id: jwtTenantId,
@@ -302,7 +304,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 });
               }
               setResolvedTenantId(finalTenantId);
-              
+
               // Update StorageManager context to ensure consistency
               if (finalTenantId && auth.user?.id) {
                 storageManager.setContext({
@@ -311,7 +313,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                   email: auth.user.email
                 });
               }
-              
+
               console.log('[AppContext] ✅ Tenant resolution completed:', {
                 final_tenant_id: finalTenantId,
                 source: jwtTenantId ? 'JWT_prioritized' : 'API_fallback'
@@ -321,7 +323,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               setHasInitialRefresh(true);
               setForceRefreshFlag(false);
             }
-          
+
             // ✅ For admins, fetch ALL departments instead of just assigned ones
             if (me.is_admin) {
               console.log('[AppContext] User is admin - fetching ALL departments');
@@ -344,13 +346,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 setDepartmentsState(me.departments);
               }
             }
-            
+
             // ✅ Store is_admin from /me endpoint
             if (!cancelled && typeof me.is_admin === 'boolean') {
               setIsAdminFromMe(me.is_admin);
               console.log('[AppContext] Set isAdmin from /me endpoint:', me.is_admin);
             }
-            
+
             try {
               if (Array.isArray(me.permissions)) {
                 const key = `auth_cache_permissions_${auth.user?.id || 'anon'}_${me.tenant_id || 'unknown'}`;

@@ -2,7 +2,6 @@ import { supabase } from "./supabase";
 import { SecureAPI } from "./secureApi";
 import { createLog } from "./logging";
 import { Permission, CityId } from "../types/auth";
-import { fetchUserById, getUserInfoSafely } from "./fetchUserById";
 
 interface SignInResult {
     user: any;
