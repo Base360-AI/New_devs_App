@@ -158,19 +158,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         // 1. Bootstrap local cache
         if (!permState.length) {
           try {
-            let bestKey: string | null = null;
-            let bestTs = 0;
-            for (let i = 0; i < localStorage.length; i++) {
-              const k = localStorage.key(i) || '';
-              if (k.startsWith('app_bootstrap_data_')) {
-                const raw = localStorage.getItem(k);
-                if (!raw) continue;
-                const parsed = JSON.parse(raw);
-                const ts = parsed?.timestamp || 0;
-                if (ts > bestTs) { bestTs = ts; bestKey = k; }
-              }
-            }
-            if (bestKey) {
+            // Only ever hydrate from THIS user's cache entry. Scanning for the
+            // newest app_bootstrap_data_* key loaded whichever entry was freshest,
+            // which could be another tenant's bootstrap data.
+            const bestKey = auth.user?.id ? `app_bootstrap_data_${auth.user.id}` : null;
+            if (bestKey && localStorage.getItem(bestKey)) {
               const raw = localStorage.getItem(bestKey)!;
               const parsed = JSON.parse(raw);
               const data = parsed?.data || {};
