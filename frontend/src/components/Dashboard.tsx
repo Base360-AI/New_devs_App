@@ -1,15 +1,37 @@
 import React, { useState } from "react";
 import { RevenueSummary } from "./RevenueSummary";
+import { useAuth } from "../contexts/AuthContext.new";
 
 const PROPERTIES = [
-  { id: 'prop-001', name: 'Beach House Alpha' },
-  { id: 'prop-002', name: 'City Apartment Downtown' },
-  { id: 'prop-003', name: 'Country Villa Estate' },
-  { id: 'prop-004', name: 'Lakeside Cottage' },
-  { id: 'prop-005', name: 'Urban Loft Modern' }
+  { id: 'prop-001', tenant: 'tenant-a', name: 'Beach House Alpha' },
+  { id: 'prop-001', tenant: 'tenant-b', name: 'Mountain Lodge Beta' },
+  { id: 'prop-002', tenant: 'tenant-a', name: 'City Apartment Downtown' },
+  { id: 'prop-003', tenant: 'tenant-a', name: 'Country Villa Estate' },
+  { id: 'prop-004', tenant: 'tenant-b', name: 'Lakeside Cottage' },
+  { id: 'prop-005', tenant: 'tenant-b', name: 'Urban Loft Modern' }
 ];
 
+const EMAIL_TENANT_MAP: Record<string, 'tenant-a' | 'tenant-b'> = {
+  'sunset@propertyflow.com': 'tenant-a',
+  'ocean@propertyflow.com': 'tenant-b',
+  'candidate@propertyflow.com': 'tenant-a'
+};
+
+type DashboardTenant = 'tenant-a' | 'tenant-b';
+
+function resolveDashboardTenant(user: any): DashboardTenant | null {
+  const directTenant = user?.tenant_id || user?.user_metadata?.tenant_id || user?.app_metadata?.tenant_id;
+  if (directTenant === 'tenant-a' || directTenant === 'tenant-b') {
+    return directTenant;
+  }
+
+  const email = (user?.email || '').toLowerCase();
+  return EMAIL_TENANT_MAP[email] || null;
+}
+
 const Dashboard: React.FC = () => {
+  const { user } = useAuth();
+  const loggedInTenant = resolveDashboardTenant(user);
   const [selectedProperty, setSelectedProperty] = useState('prop-001');
 
   return (
@@ -35,8 +57,8 @@ const Dashboard: React.FC = () => {
                   onChange={(e) => setSelectedProperty(e.target.value)}
                   className="block w-full sm:w-auto min-w-[200px] px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
                 >
-                  {PROPERTIES.map((property) => (
-                    <option key={property.id} value={property.id}>
+                  {PROPERTIES.filter((property) => loggedInTenant && property.tenant === loggedInTenant).map((property) => (
+                    <option key={`${property.tenant}:${property.id}`} value={property.id}>
                       {property.name}
                     </option>
                   ))}
@@ -46,7 +68,7 @@ const Dashboard: React.FC = () => {
           </div>
 
           <div className="space-y-6">
-            <RevenueSummary propertyId={selectedProperty} />
+            <RevenueSummary propertyId={selectedProperty} tenantId={loggedInTenant} debugTenant={loggedInTenant || undefined} />
           </div>
         </div>
       </div>
