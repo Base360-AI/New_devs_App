@@ -3,7 +3,7 @@ import { SecureAPI } from '../lib/secureApi';
 
 interface RevenueData {
     property_id: string;
-    total_revenue: number;
+    total_revenue: string;
     currency: string;
     reservations_count: number;
 }

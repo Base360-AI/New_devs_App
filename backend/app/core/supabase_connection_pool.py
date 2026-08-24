@@ -320,6 +320,10 @@ class SupabaseConnectionPool:
         """Initialize the connection pool"""
         if self._initialized:
             return
+
+        if not settings.supabase_url or not settings.supabase_service_role_key:
+            logger.info("Supabase not configured; skipping connection pool")
+            return
             
         try:
             logger.info(f"Initializing Supabase connection pool with {self.max_connections} connections")

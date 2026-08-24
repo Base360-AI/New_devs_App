@@ -90,15 +90,26 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting up...")
 
-    # Initialize Supabase connection pool
-    try:
-        from .core.supabase_connection_pool import supabase_pool
+    from .config import settings
 
-        await supabase_pool.initialize()
-        logger.info("✅ Supabase connection pool initialized")
+    if settings.supabase_url and settings.supabase_service_role_key:
+        try:
+            from .core.supabase_connection_pool import supabase_pool
+
+            await supabase_pool.initialize()
+            logger.info("Supabase connection pool initialized")
+        except Exception as e:
+            logger.error(f"Supabase connection pool initialization failed: {e}")
+    else:
+        logger.info("Supabase not configured; using local Postgres")
+
+    try:
+        from .core.database_pool import db_pool
+
+        await db_pool.initialize()
     except Exception as e:
-        logger.error(f"❌ Supabase connection pool initialization failed: {e}")
-        # Continue startup - fallback to direct connections
+        logger.error(f"Database pool initialization failed: {e}")
+        raise
 
     # Initialize Redis connection with timeout
     try:
@@ -127,14 +138,19 @@ async def lifespan(app: FastAPI):
     await async_processor.shutdown()
     logger.info("Async processor shutdown completed")
 
-    # Close connection pool
+    try:
+        from .core.database_pool import db_pool
+
+        await db_pool.close()
+    except Exception as e:
+        logger.warning(f"Error closing database pool: {e}")
+
     try:
         from .core.supabase_connection_pool import supabase_pool
 
         await supabase_pool.close()
-        logger.info("✅ Supabase connection pool closed")
     except Exception as e:
-        logger.warning(f"⚠️ Error closing connection pool: {e}")
+        logger.warning(f"Error closing Supabase connection pool: {e}")
 
 
 app = FastAPI(
