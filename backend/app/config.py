@@ -9,7 +9,12 @@ logger = logging.getLogger(__name__)
 
 class Settings(BaseSettings):
     # Core settings
-    database_url: str = "postgresql://postgres:postgres@db:5432/propertyflow"
+    supabase_db_user: str = "postgres"
+    supabase_db_password: str = "postgres"
+    supabase_db_host: str = "db"
+    supabase_db_port: str = "5432"
+    supabase_db_name: str = "propertyflow"
+    
     redis_url: str = "redis://redis:6379/0"
     secret_key: str = "debug_challenge_secret"
     
