@@ -144,14 +144,23 @@ async def login(request: LoginRequest):
             )
             
             # Resolve tenant ID
-            tenant_id = await TenantResolver.resolve_tenant_id(user_id=user.id, user_email=user.email)
+            tenant_id = await TenantResolver.resolve_tenant_id(
+                user_id=user.id,
+                user_email=user.email,
+                token_payload={
+                    "app_metadata": user.app_metadata or {}
+                },
+            )
             
             # Create JWT token
             user_data = {
                 "id": user.id,
                 "email": user.email,
                 "is_admin": is_admin,
-                "tenant_id": tenant_id,
+                "app_metadata": {
+                    "role": user.app_metadata.get("role", "user"),
+                    "tenant_id": tenant_id,
+                },
                 "exp": datetime.utcnow() + timedelta(hours=24),
                 "aud": "authenticated"
             }

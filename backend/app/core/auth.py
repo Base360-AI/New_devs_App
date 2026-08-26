@@ -252,8 +252,15 @@ async def authenticate_request(
         logger.info(f"==================== TENANT ID EXTRACTION ====================")
         logger.info(f"User: {user.email} (ID: {user.id})")
 
-        # Use TenantResolver for comprehensive tenant resolution
-        tenant_id = await TenantResolver.resolve_tenant_id(token=token, user_id=user.id, user_email=user.email)
+        # Resolve only from verified server-controlled claims or DB membership.
+        tenant_id = await TenantResolver.resolve_tenant_id(
+            user_id=user.id,
+            user_email=user.email,
+            token_payload={
+                "app_metadata": getattr(user, "app_metadata", {}) or {}
+            },
+            membership_tenant_ids=tenant_ids,
+        )
 
         # If we found a tenant_id and it's not in the user's metadata, update it for next time
         current_tenant_in_metadata = None
@@ -508,9 +515,16 @@ async def verify_token_ws(token: str) -> Optional[AuthenticatedUser]:
         
         logger.info(f"WS_AUTH: Final user cities after processing: {user_cities}")
 
-        # Use the comprehensive tenant resolver (same as regular auth)
+        # Use the same verified claims and membership data as HTTP auth.
         logger.info(f"WS_AUTH: Resolving tenant for user {user.email}")
-        tenant_id = await TenantResolver.resolve_tenant_id(token=token, user_id=user.id, user_email=user.email)
+        tenant_id = await TenantResolver.resolve_tenant_id(
+            user_id=user.id,
+            user_email=user.email,
+            token_payload={
+                "app_metadata": getattr(user, "app_metadata", {}) or {}
+            },
+            membership_tenant_ids=tenant_ids,
+        )
 
         auth_user = AuthenticatedUser(
             id=user.id,

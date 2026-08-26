@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+.coverage
+htmlcov/
+
+# Node / frontend
+node_modules/
+frontend/dist/
+dist/
+build/
+*.tsbuildinfo
+vite.config.ts.timestamp-*.mjs
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+.kamal.env
+
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+
+# Misc
+tmp/
+*.log

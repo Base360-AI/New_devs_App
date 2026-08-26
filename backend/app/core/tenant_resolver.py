@@ -1,8 +1,8 @@
 """
 Minimal tenant resolver for authentication.
 """
-from typing import Optional
 import logging
+from typing import Optional, Sequence
 
 logger = logging.getLogger(__name__)
 
@@ -21,24 +21,14 @@ class TenantResolver:
         Returns:
             Tenant ID if found, None otherwise
         """
-        # Try user_metadata first (most common location)
-        if 'user_metadata' in token_payload:
-            tenant_id = token_payload['user_metadata'].get('tenant_id')
+        # app_metadata is signed and server-controlled. user_metadata is not
+        # authoritative because users may be able to edit it themselves.
+        if "app_metadata" in token_payload:
+            tenant_id = token_payload["app_metadata"].get("tenant_id")
             if tenant_id:
                 return tenant_id
 
-        # Try app_metadata as fallback
-        if 'app_metadata' in token_payload:
-            tenant_id = token_payload['app_metadata'].get('tenant_id')
-            if tenant_id:
-                return tenant_id
-
-        # Try root level
-        tenant_id = token_payload.get('tenant_id')
-        if tenant_id:
-            return tenant_id
-
-        logger.warning("No tenant_id found in token payload")
+        logger.warning("No tenant_id found in signed app_metadata")
         return None
 
     @staticmethod
@@ -52,24 +42,20 @@ class TenantResolver:
         Returns:
             Tenant ID if found, None otherwise
         """
-        # Check various possible locations
-        if 'tenant_id' in user_data:
-            return user_data['tenant_id']
-
-        if 'user_metadata' in user_data:
-            tenant_id = user_data['user_metadata'].get('tenant_id')
-            if tenant_id:
-                return tenant_id
-
-        if 'app_metadata' in user_data:
-            tenant_id = user_data['app_metadata'].get('tenant_id')
+        if "app_metadata" in user_data:
+            tenant_id = user_data["app_metadata"].get("tenant_id")
             if tenant_id:
                 return tenant_id
 
         return None
 
     @staticmethod
-    async def resolve_tenant_id(user_id: str, user_email: str, token: Optional[str] = None) -> str:
+    async def resolve_tenant_id(
+        user_id: str,
+        user_email: str,
+        token_payload: Optional[dict] = None,
+        membership_tenant_ids: Optional[Sequence[str]] = None,
+    ) -> Optional[str]:
         """
         Resolve tenant ID for a user.
         
@@ -78,18 +64,25 @@ class TenantResolver:
             user_email: User email
             
         Returns:
-            Tenant ID
+            Tenant ID, or None when no authoritative assignment exists.
         """
-        # Fallback mapping by known user email.
-        if user_email == "sunset@propertyflow.com":
-            return "tenant-a"
-        if user_email == "ocean@propertyflow.com":
-            return "tenant-b"
-        if user_email == "candidate@propertyflow.com":
-            return "tenant-a"
-            
-        # Default fallback
-        return "tenant-a"
+        if token_payload:
+            tenant_id = TenantResolver.resolve_tenant_from_token(token_payload)
+            if tenant_id:
+                return tenant_id
+
+        tenant_ids = [
+            tenant_id for tenant_id in membership_tenant_ids or [] if tenant_id
+        ]
+        if len(tenant_ids) == 1:
+            return tenant_ids[0]
+
+        logger.warning(
+            "Unable to resolve one tenant for user %s (%s)",
+            user_email,
+            user_id,
+        )
+        return None
 
     @staticmethod
     async def update_user_tenant_metadata(user_id: str, tenant_id: str) -> None:
