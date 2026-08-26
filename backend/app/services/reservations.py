@@ -13,7 +13,6 @@ Time rules:
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Dict, Any, Optional, List, Tuple
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import logging
 
 from sqlalchemy import text
@@ -42,16 +41,6 @@ def month_bounds(year: int, month: int) -> Tuple[datetime, datetime]:
     start = datetime(year, month, 1)
     end = datetime(year + 1, 1, 1) if month == 12 else datetime(year, month + 1, 1)
     return start, end
-
-
-def validate_timezone(tz_name: str) -> str:
-    """Return tz_name if it is a valid IANA zone, otherwise fall back to UTC."""
-    try:
-        ZoneInfo(tz_name)
-        return tz_name
-    except (ZoneInfoNotFoundError, ValueError, TypeError):
-        logger.warning(f"Unknown timezone '{tz_name}', falling back to UTC")
-        return "UTC"
 
 
 async def calculate_revenue(

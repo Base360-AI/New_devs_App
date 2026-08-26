@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from app.services.cache import revenue_cache_key
-from app.services.reservations import month_bounds, to_money, validate_timezone
+from app.services.reservations import month_bounds, to_money
 
 
 # --- Bug 1: cache key must be tenant-scoped -----------------------------------------
@@ -79,7 +79,3 @@ def test_feb_29_2330_utc_is_march_in_paris_but_february_in_new_york():
     naive_utc = check_in.replace(tzinfo=None)
     assert naive_utc < march_start  # the old naive-UTC logic put it in February
 
-
-def test_validate_timezone_falls_back_to_utc():
-    assert validate_timezone("Europe/Paris") == "Europe/Paris"
-    assert validate_timezone("Not/AZone") == "UTC"
