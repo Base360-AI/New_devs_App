@@ -1452,20 +1452,22 @@ export class SecureAPIClient {
   /**
    * Get dashboard summary with optional simulation header
    */
-  async getDashboardSummary(propertyId: string, options?: { simulatedTenant?: string, timestamp?: number }) {
+  async getDashboardSummary(propertyId: string, options?: { month?: number, year?: number }) {
     const queryParams = new URLSearchParams({ property_id: propertyId });
-    if (options?.timestamp) {
-      queryParams.append('_t', options.timestamp.toString());
+    if (options?.month !== undefined && options?.year !== undefined) {
+      queryParams.append('month', String(options.month));
+      queryParams.append('year', String(options.year));
     }
+    // Tenant is derived server-side from the signed JWT; no simulated-tenant header.
+    return this.request<any>(`/api/v1/dashboard/summary?${queryParams}`);
+  }
 
-    const requestOptions: RequestInit = {};
-    if (options?.simulatedTenant) {
-      requestOptions.headers = {
-        'X-Simulated-Tenant': options.simulatedTenant
-      };
-    }
-
-    return this.request<any>(`/api/v1/dashboard/summary?${queryParams}`, requestOptions);
+  /**
+   * Properties visible to the current tenant.
+   */
+  async getDashboardProperties() {
+    const res = await this.request<any>('/api/v1/dashboard/properties');
+    return Array.isArray(res) ? res : [];
   }
 
   async uploadCompanyLogo(logo_url: string) {
