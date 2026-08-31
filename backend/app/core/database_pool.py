@@ -1,6 +1,6 @@
 import asyncio
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.pool import QueuePool
+from sqlalchemy import text
 import logging
 from ..config import settings
 
@@ -10,42 +10,62 @@ class DatabasePool:
     def __init__(self):
         self.engine = None
         self.session_factory = None
+        self._initialize_lock = asyncio.Lock()
         
-    async def initialize(self):
-        """Initialize database connection pool"""
+    async def initialize(self) -> bool:
+        """Initialize and verify the shared database connection pool once."""
+        if self.session_factory:
+            return True
+
+        candidate_engine = None
         try:
-            # Create async engine with connection pooling
-            database_url = f"postgresql+asyncpg://{settings.supabase_db_user}:{settings.supabase_db_password}@{settings.supabase_db_host}:{settings.supabase_db_port}/{settings.supabase_db_name}"
-            
-            self.engine = create_async_engine(
-                database_url,
-                poolclass=QueuePool,
-                pool_size=20,  # Number of connections to maintain
-                max_overflow=30,  # Additional connections when needed
-                pool_pre_ping=True,  # Validate connections
-                pool_recycle=3600,  # Recycle connections every hour
-                echo=False  # Set to True for SQL debugging
-            )
-            
-            self.session_factory = async_sessionmaker(
-                bind=self.engine,
-                class_=AsyncSession,
-                expire_on_commit=False
-            )
-            
-            logger.info("✅ Database connection pool initialized")
-            
+            async with self._initialize_lock:
+                if self.session_factory:
+                    return True
+
+                database_url = settings.database_url.replace(
+                    "postgresql://",
+                    "postgresql+asyncpg://",
+                    1,
+                )
+
+                candidate_engine = create_async_engine(
+                    database_url,
+                    pool_size=20,
+                    max_overflow=30,
+                    pool_pre_ping=True,
+                    pool_recycle=3600,
+                    echo=False,
+                )
+
+                async with candidate_engine.connect() as connection:
+                    await connection.execute(text("SELECT 1"))
+
+                self.engine = candidate_engine
+                self.session_factory = async_sessionmaker(
+                    bind=self.engine,
+                    class_=AsyncSession,
+                    expire_on_commit=False,
+                )
+
+                logger.info("✅ Database connection pool initialized")
+                return True
         except Exception as e:
             logger.error(f"❌ Database pool initialization failed: {e}")
+            if candidate_engine:
+                await candidate_engine.dispose()
             self.engine = None
             self.session_factory = None
+            return False
     
     async def close(self):
         """Close database connections"""
         if self.engine:
             await self.engine.dispose()
+        self.engine = None
+        self.session_factory = None
     
-    async def get_session(self) -> AsyncSession:
+    def get_session(self) -> AsyncSession:
         """Get database session from pool"""
         if not self.session_factory:
             raise Exception("Database pool not initialized")
