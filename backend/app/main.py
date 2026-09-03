@@ -90,6 +90,16 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting up...")
 
+    # Initialize the shared PostgreSQL pool used by revenue reporting. The app
+    # stays available if PostgreSQL is down so the dashboard can return a clear
+    # retryable 503 response instead of fabricated data.
+    try:
+        from .core.database_pool import db_pool
+
+        await db_pool.initialize()
+    except Exception as e:
+        logger.warning(f"PostgreSQL initialization warning: {e}")
+
     # Initialize Supabase connection pool
     try:
         from .core.supabase_connection_pool import supabase_pool
@@ -128,6 +138,14 @@ async def lifespan(app: FastAPI):
     logger.info("Async processor shutdown completed")
 
     # Close connection pool
+    try:
+        from .core.database_pool import db_pool
+
+        await db_pool.close()
+        logger.info("PostgreSQL connection pool closed")
+    except Exception as e:
+        logger.warning(f"Error closing PostgreSQL connection pool: {e}")
+
     try:
         from .core.supabase_connection_pool import supabase_pool
 

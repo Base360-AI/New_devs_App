@@ -18,12 +18,14 @@ export const RevenueSummary: React.FC<RevenueSummaryProps> = ({ propertyId = 'pr
     const [data, setData] = useState<RevenueData | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
+    const [retryCount, setRetryCount] = useState(0);
 
     const activeTenant = debugTenant || 'candidate';
 
     useEffect(() => {
         const fetchRevenue = async () => {
             setLoading(true);
+            setError('');
             try {
                 // Use SecureAPI to handle authentication automatically
                 // We pass the simulatedTenant option which SecureAPI will attach as a header
@@ -33,7 +35,10 @@ export const RevenueSummary: React.FC<RevenueSummaryProps> = ({ propertyId = 'pr
                 });
                 setData(response);
             } catch (err) {
-                setError('Failed to load revenue data');
+                setData(null);
+                setError(
+                    "We couldn't connect to the reporting service. Please try again in a moment."
+                );
                 console.error(err);
             } finally {
                 setLoading(false);
@@ -41,7 +46,7 @@ export const RevenueSummary: React.FC<RevenueSummaryProps> = ({ propertyId = 'pr
         };
 
         fetchRevenue();
-    }, [propertyId, activeTenant]);
+    }, [propertyId, activeTenant, retryCount]);
 
     if (loading) {
         return (
@@ -58,7 +63,21 @@ export const RevenueSummary: React.FC<RevenueSummaryProps> = ({ propertyId = 'pr
         );
     }
 
-    if (error) return <div className="p-4 text-red-500 bg-red-50 rounded-lg">{error}</div>;
+    if (error) {
+        return (
+            <div role="alert" className="p-5 text-red-800 bg-red-50 border border-red-200 rounded-lg">
+                <h3 className="font-semibold">Revenue unavailable</h3>
+                <p className="mt-1 text-sm">{error}</p>
+                <button
+                    type="button"
+                    onClick={() => setRetryCount((count) => count + 1)}
+                    className="mt-3 px-3 py-2 text-sm font-medium text-red-800 bg-white border border-red-300 rounded-md hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-red-500"
+                >
+                    Try again
+                </button>
+            </div>
+        );
+    }
     if (!data) return null;
 
     const displayTotal = Math.round(data.total_revenue * 100) / 100;
