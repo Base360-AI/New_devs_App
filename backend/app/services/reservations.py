@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime
 from decimal import ROUND_HALF_UP, Decimal
 from inspect import isawaitable
 from typing import Any, Dict, Optional
@@ -18,11 +18,10 @@ async def calculate_monthly_revenue(
     month: Optional[int] = None,
     year: Optional[int] = None,
 ) -> Dict[str, Any]:
-    """Aggregate revenue for a single UTC calendar month.
+    """Aggregate revenue for a calendar month in the property's timezone.
 
     If no period is requested, the latest month containing a reservation for
-    the tenant and property is selected. Property-local timezone handling is a
-    separate concern; this query deliberately uses UTC boundaries.
+    the tenant and property is selected.
     """
     if (month is None) != (year is None):
         raise ValueError("month and year must be provided together")
@@ -53,15 +52,24 @@ async def calculate_monthly_revenue(
                         """
                         SELECT
                             CAST(EXTRACT(
-                                YEAR FROM (check_in_date AT TIME ZONE 'UTC')
+                                YEAR FROM (
+                                    r.check_in_date AT TIME ZONE p.timezone
+                                )
                             ) AS INTEGER) AS year,
                             CAST(EXTRACT(
-                                MONTH FROM (check_in_date AT TIME ZONE 'UTC')
+                                MONTH FROM (
+                                    r.check_in_date AT TIME ZONE p.timezone
+                                )
                             ) AS INTEGER) AS month
-                        FROM reservations
-                        WHERE property_id = :property_id
-                          AND tenant_id = :tenant_id
-                        ORDER BY check_in_date DESC
+                        FROM reservations r
+                        JOIN properties p
+                          ON p.id = r.property_id
+                         AND p.tenant_id = r.tenant_id
+                        WHERE r.property_id = :property_id
+                          AND r.tenant_id = :tenant_id
+                        ORDER BY (
+                            r.check_in_date AT TIME ZONE p.timezone
+                        ) DESC
                         LIMIT 1
                         """
                     ),
@@ -82,23 +90,30 @@ async def calculate_monthly_revenue(
                 month = int(period.month)
                 year = int(period.year)
 
-            start_date = datetime(year, month, 1, tzinfo=timezone.utc)
+            start_date = datetime(year, month, 1)
             if month == 12:
-                end_date = datetime(year + 1, 1, 1, tzinfo=timezone.utc)
+                end_date = datetime(year + 1, 1, 1)
             else:
-                end_date = datetime(year, month + 1, 1, tzinfo=timezone.utc)
+                end_date = datetime(year, month + 1, 1)
 
             result = await session.execute(
                 text(
                     """
                     SELECT
+                        p.id AS property_id,
                         COALESCE(SUM(total_amount), 0) AS total_revenue,
-                        COUNT(*) AS reservation_count
-                    FROM reservations
-                    WHERE property_id = :property_id
-                      AND tenant_id = :tenant_id
-                      AND check_in_date >= :start_date
-                      AND check_in_date < :end_date
+                        COUNT(r.id) AS reservation_count
+                    FROM properties p
+                    LEFT JOIN reservations r
+                      ON p.id = r.property_id
+                     AND p.tenant_id = r.tenant_id
+                     AND (r.check_in_date AT TIME ZONE p.timezone)
+                           >= :start_date
+                     AND (r.check_in_date AT TIME ZONE p.timezone)
+                           < :end_date
+                    WHERE p.id = :property_id
+                      AND p.tenant_id = :tenant_id
+                    GROUP BY p.id
                     """
                 ),
                 {

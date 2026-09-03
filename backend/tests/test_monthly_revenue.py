@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
+from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException
 
@@ -53,7 +54,7 @@ class MonthlyRevenueTests(unittest.IsolatedAsyncioTestCase):
         aggregated = Decimal("333.333") + Decimal("333.333") + Decimal("333.339")
         self.assertEqual(round_currency(aggregated), Decimal("1000.01"))
 
-    async def test_explicit_period_uses_utc_boundaries(self):
+    async def test_explicit_period_uses_property_timezone_boundaries(self):
         session = FakeSession(
             [SimpleNamespace(total_revenue=Decimal("999.995"), reservation_count=3)]
         )
@@ -68,12 +69,14 @@ class MonthlyRevenueTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["count"], 3)
         self.assertEqual((result["month"], result["year"]), (3, 2024))
         self.assertEqual(len(session.calls), 1)
-        _, parameters = session.calls[0]
+        statement, parameters = session.calls[0]
+        self.assertIn("r.check_in_date AT TIME ZONE p.timezone", statement)
+        self.assertIn("p.tenant_id = r.tenant_id", statement)
         self.assertEqual(
-            parameters["start_date"], datetime(2024, 3, 1, tzinfo=timezone.utc)
+            parameters["start_date"], datetime(2024, 3, 1)
         )
         self.assertEqual(
-            parameters["end_date"], datetime(2024, 4, 1, tzinfo=timezone.utc)
+            parameters["end_date"], datetime(2024, 4, 1)
         )
 
     async def test_default_period_is_latest_available_month(self):
@@ -90,8 +93,36 @@ class MonthlyRevenueTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result["total"], "1776.50")
         self.assertEqual((result["month"], result["year"]), (3, 2024))
-        self.assertIn("AT TIME ZONE 'UTC'", session.calls[0][0])
+        self.assertIn("r.check_in_date AT TIME ZONE p.timezone", session.calls[0][0])
+        self.assertIn("p.tenant_id = r.tenant_id", session.calls[0][0])
         self.assertEqual(len(session.calls), 2)
+
+    async def test_paris_boundary_booking_is_in_march(self):
+        boundary_check_in = datetime(2024, 2, 29, 23, 30, tzinfo=timezone.utc)
+        paris_check_in = boundary_check_in.astimezone(ZoneInfo("Europe/Paris"))
+        self.assertEqual(
+            paris_check_in,
+            datetime(2024, 3, 1, 0, 30, tzinfo=ZoneInfo("Europe/Paris")),
+        )
+
+        session = FakeSession(
+            [SimpleNamespace(total_revenue=Decimal("2250.000"), reservation_count=4)]
+        )
+        fake_pool = FakePool(session)
+
+        with patch("app.core.database_pool.DatabasePool", return_value=fake_pool):
+            result = await calculate_monthly_revenue(
+                "prop-001", "tenant-a", month=3, year=2024
+            )
+
+        statement, parameters = session.calls[0]
+        self.assertIn("p.id = r.property_id", statement)
+        self.assertIn("p.tenant_id = r.tenant_id", statement)
+        self.assertIn("r.check_in_date AT TIME ZONE p.timezone", statement)
+        self.assertEqual(parameters["start_date"], datetime(2024, 3, 1))
+        self.assertEqual(parameters["end_date"], datetime(2024, 4, 1))
+        self.assertEqual(result["total"], "2250.00")
+        self.assertEqual(result["count"], 4)
 
     async def test_no_available_period_returns_empty_summary(self):
         session = FakeSession([None])
