@@ -1,6 +1,6 @@
 from fastapi import HTTPException, Depends, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from jose import JWTError, jwt
+import jwt
 from typing import Optional, List
 from datetime import datetime
 import logging
@@ -8,8 +8,8 @@ import hashlib
 import asyncio
 from ..database import supabase
 from ..models.auth import AuthenticatedUser, Permission
-from ..config import settings
 from .tenant_resolver import TenantResolver
+from .security import decode_access_token, is_access_token_revoked
 
 logger = logging.getLogger(__name__)
 
@@ -49,18 +49,9 @@ def invalidate_user_cache(user_id: str):
         del auth_cache[key]
 
     if keys_to_delete:
-        logger.info(f"Invalidated {len(keys_to_delete)} cache entries for user {user_id}")
+        logger.info("Invalidated %d authentication cache entries", len(keys_to_delete))
 
     return len(keys_to_delete)
-
-
-ADMIN_EMAILS = [
-    "sid@theflexliving.com",
-    "raouf@theflexliving.com",
-    "michael@theflexliving.com",
-    "younes@gmail.com",
-    "yazid@theflexliving.com",
-]
 
 
 async def authenticate_request(
@@ -87,61 +78,55 @@ async def authenticate_request(
             cached_user = cached_data["user"]
             # If not, force a refresh to get proper tenant isolation
             if not cached_user.tenant_id:
-                logger.warning(f"AUTH: Cached auth for {cached_user.email} missing tenant_id - forcing refresh")
+                logger.warning("AUTH: Cached identity missing tenant_id; forcing refresh")
                 del auth_cache[token_hash]
             else:
-                logger.info(
-                    f"AUTH: Using cached authentication for token {token_hash} (tenant: {cached_user.tenant_id}) for user: {cached_user.email}"
-                )
+                logger.debug("AUTH: Using cached authentication")
                 return cached_user
         else:
             # Remove expired cache entry
             del auth_cache[token_hash]
 
-    logger.info(f"AUTH: Starting authentication - Token hash: {token_hash}, Token preview: {token[:20]}...")
+    logger.debug("AUTH: Starting authentication")
 
     try:
-        logger.debug(f"AUTH: Verifying token with Supabase - Token: {token[:20]}...")
+        logger.debug("AUTH: Verifying token")
 
         # Verify token - handle both Supabase tokens and custom JWT tokens
+        local_payload = None
         try:
             # First try to decode as a custom JWT token.
             try:
-                payload = jwt.decode(
-                    token, 
-                    settings.secret_key, 
-                    algorithms=["HS256"],
-                    audience="authenticated"  # Accept tokens with aud: "authenticated"
-                )
-                logger.info(f"AUTH: Successfully decoded custom JWT token for {payload.get('email')}")
+                local_payload = decode_access_token(token)
+                if is_access_token_revoked(local_payload):
+                    raise jwt.InvalidTokenError("Token has been revoked")
+                logger.debug("AUTH: Successfully decoded local JWT")
                 
                 # Create a mock user object from JWT payload
                 class MockUser:
                     def __init__(self, payload):
-                        self.id = payload.get('id')
+                        self.id = payload.get('sub')
                         self.email = payload.get('email')
                         self.app_metadata = payload.get('app_metadata', {})
                         self.user_metadata = payload.get('user_metadata', {})
                         self.raw_app_metadata = payload.get('app_metadata', {})
                         
-                user = MockUser(payload)
+                user = MockUser(local_payload)
                 
-            except JWTError:
+            except jwt.InvalidTokenError:
                 # If custom JWT fails, try Supabase auth
                 response = supabase.auth.get_user(token)
                 user = response.user
                 
         except Exception as e:
             # Malformed or invalid token (e.g., wrong number of segments)
-            logger.warning(f"AUTH: Token verification failed (hash={token_hash}): {e.__class__.__name__}")
+            logger.warning("AUTH: Token verification failed: %s", e.__class__.__name__)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid or missing token",
             )
 
-        logger.debug(
-            f"AUTH: Supabase response - User ID: {user.id if user else None}, Email: {user.email if user else None}"
-        )
+        logger.debug("AUTH: Identity provider returned user=%s", bool(user))
 
         if not user:
             logger.warning("AUTH: No user found for provided token")
@@ -151,7 +136,7 @@ async def authenticate_request(
             )
 
         # Get user permissions.
-        logger.debug(f"AUTH: Fetching permissions for user {user.id}")
+        logger.debug("AUTH: Fetching permissions")
         try:
             permissions_response = (
                 supabase.service.table("user_permissions").select("section, action").eq("user_id", user.id).execute()
@@ -159,22 +144,21 @@ async def authenticate_request(
             permissions = [Permission(**perm) for perm in permissions_response.data]
         except Exception as e:
             # Use empty permissions when permissions cannot be fetched.
-            logger.info(f"AUTH: Using empty permissions for mock user {user.email}")
+            logger.debug("AUTH: Using empty permissions")
             permissions = []
-        logger.debug(f"AUTH: Found {len(permissions)} permissions for user {user.id}")
+        logger.debug("AUTH: Found %d permissions", len(permissions))
 
         # Get user cities.
-        logger.debug(f"AUTH: Fetching cities for user {user.id}")
+        logger.debug("AUTH: Fetching city assignments")
         try:
             cities_response = supabase.service.table("users_city").select("city_name").eq("user_id", user.id).execute()
-            logger.info(f"AUTH: Raw cities response for user {user.id}: {cities_response.data}")
             # Ensure cities are always lowercase for consistency
             user_cities = [city["city_name"].lower() for city in cities_response.data if city.get("city_name")]
         except Exception as e:
             # Use empty cities when city assignments cannot be fetched.
-            logger.info(f"AUTH: Using empty cities for mock user {user.email}")
+            logger.debug("AUTH: Using empty city assignments")
             user_cities = []
-        logger.info(f"AUTH: Found cities for user {user.id} ({user.email}): {user_cities}")
+        logger.debug("AUTH: Found %d city assignments", len(user_cities))
 
         # Determine tenant role for admin fallback.
         tenant_role = None
@@ -197,7 +181,7 @@ async def authenticate_request(
                         tenant_role = role_value
                         break
         except Exception as tenant_role_error:
-            logger.info(f"AUTH: Using default tenant role for mock user {user.email}")
+            logger.debug("AUTH: Using token tenant role")
             tenant_role = getattr(user, 'app_metadata', {}).get('role', 'user')
 
         # Check if user is admin
@@ -208,15 +192,8 @@ async def authenticate_request(
         elif hasattr(user, "app_metadata") and user.app_metadata:
             role = user.app_metadata.get("role")
 
-        is_admin = user.email in ADMIN_EMAILS or role == "admin" or tenant_role == "admin"
-        logger.info(
-            "AUTH: Admin check for user %s - Email in admin list: %s, Role from metadata: %s, Tenant role: %s, Is admin: %s",
-            user.email,
-            user.email in ADMIN_EMAILS,
-            role,
-            tenant_role,
-            is_admin,
-        )
+        is_admin = role in ("admin", "owner") or tenant_role in ("admin", "owner")
+        logger.debug("AUTH: Administrator status: %s", is_admin)
 
         allowed_city_map = {}
         if not tenant_ids and getattr(user, "tenant_id", None):
@@ -238,22 +215,29 @@ async def authenticate_request(
                     key = city.lower()
                     if key not in allowed_city_map:
                         allowed_city_map[key] = city
-            except Exception as allowed_error:
-                logger.info(f"AUTH: Using default allowed cities for mock user {user.email}")
+            except Exception:
+                logger.debug("AUTH: No property-derived cities available")
                 allowed_city_map = {}
 
         # ✅ SIMPLIFIED: Let endpoint-specific logic handle admin vs user city differences
         # Auth only provides initial user city assignments for ALL users
         # Admin city logic is handled in individual endpoints (city_access_fast.py)
-        logger.info(f"AUTH: User cities from users_city table: {user_cities}")
-        logger.info(f"AUTH: Admin status: {is_admin} - city access will be determined by endpoint logic")
-
-        # Use the comprehensive tenant resolver
-        logger.info(f"==================== TENANT ID EXTRACTION ====================")
-        logger.info(f"User: {user.email} (ID: {user.id})")
+        logger.debug("AUTH: City access will be determined by endpoint logic")
 
         # Use TenantResolver for comprehensive tenant resolution
-        tenant_id = await TenantResolver.resolve_tenant_id(token=token, user_id=user.id, user_email=user.email)
+        tenant_id = (
+            local_payload.get("tenant_id")
+            if local_payload
+            else await TenantResolver.resolve_tenant_id(
+                token=token, user_id=user.id, user_email=user.email
+            )
+        )
+        if not tenant_id:
+            logger.warning("AUTH: Authenticated user has no active tenant")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No active tenant membership",
+            )
 
         # If we found a tenant_id and it's not in the user's metadata, update it for next time
         current_tenant_in_metadata = None
@@ -263,10 +247,8 @@ async def authenticate_request(
             current_tenant_in_metadata = user.app_metadata.get("tenant_id")
 
         if tenant_id and current_tenant_in_metadata != tenant_id:
-            logger.info(f"Updating user metadata with tenant_id for future requests...")
+            logger.debug("AUTH: Updating tenant metadata")
             asyncio.create_task(TenantResolver.update_user_tenant_metadata(user.id, tenant_id))
-
-        logger.info(f"==================== TENANT ID EXTRACTION END ====================")
 
         auth_user = AuthenticatedUser(
             id=user.id,
@@ -291,7 +273,10 @@ async def authenticate_request(
 
         duration = (datetime.now() - start_time).total_seconds()
         logger.info(
-            f"AUTH: OK - {user.email} (ID: {user.id}) in {duration:.2f}s, tenant={tenant_id}, cities={len(user_cities)}, perms={len(permissions)}"
+            "AUTH: OK in %.2fs, cities=%d, permissions=%d",
+            duration,
+            len(user_cities),
+            len(permissions),
         )
 
         return auth_user
@@ -301,7 +286,7 @@ async def authenticate_request(
         # If we raised HTTPException above, rethrow
         if isinstance(error, HTTPException):
             raise
-        logger.warning(f"AUTH: Failed ({type(error).__name__}) in {duration:.2f}s: {str(error)}")
+        logger.warning("AUTH: Failed (%s) in %.2fs", type(error).__name__, duration)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or missing token",
@@ -310,9 +295,9 @@ async def authenticate_request(
 
 def has_permission(user: AuthenticatedUser, section: str, action: str) -> bool:
     """Check if user has specific permission"""
-    logger.info(f"Permission check for {user.email}: {section}.{action} - Is admin: {user.is_admin}")
+    logger.debug("Permission check for %s.%s; admin=%s", section, action, user.is_admin)
     if user.is_admin:
-        logger.info(f"User {user.email} is admin, granting permission")
+        logger.debug("Administrator permission granted")
         return True
 
     # Check for permission with wildcard support (matching frontend logic)
@@ -330,11 +315,9 @@ def has_permission(user: AuthenticatedUser, section: str, action: str) -> bool:
     )
 
     if has_perm:
-        logger.info(f"User {user.email} has permission for {section}.{action}")
+        logger.debug("Permission granted for %s.%s", section, action)
     else:
-        # Log available permissions for debugging
-        user_perms = [f"{p.section}.{p.action}" for p in user.permissions]
-        logger.info(f"User {user.email} lacks permission for {section}.{action}. Available: {user_perms[:10]}")
+        logger.debug("Permission denied for %s.%s", section, action)
 
     return has_perm
 
@@ -344,9 +327,7 @@ def require_permission(section: str, action: str):
 
     def permission_checker(user: AuthenticatedUser = Depends(authenticate_request)):
         if not has_permission(user, section, action):
-            logger.warning(
-                f"Permission denied for user {user.email} - Required: {section}.{action}, Is admin: {user.is_admin}, User permissions: {[f'{p.section}.{p.action}' for p in user.permissions]}"
-            )
+            logger.warning("Permission denied; required=%s.%s", section, action)
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Insufficient permissions: {section}.{action}",
@@ -354,6 +335,18 @@ def require_permission(section: str, action: str):
         return user
 
     return permission_checker
+
+
+def require_admin(
+    user: AuthenticatedUser = Depends(authenticate_request),
+) -> AuthenticatedUser:
+    """Require an authenticated tenant administrator."""
+    if not user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Administrator access required",
+        )
+    return user
 
 
 def require_any_permission(*permissions):
@@ -378,10 +371,7 @@ def require_any_permission(*permissions):
         
         if not has_any_permission:
             permission_strings = [f"{section}.{action}" for section, action in permissions]
-            logger.warning(
-                f"Permission denied for user {user.email} - Required any of: {permission_strings}, "
-                f"Is admin: {user.is_admin}, User permissions: {[f'{p.section}.{p.action}' for p in user.permissions]}"
-            )
+            logger.warning("Permission denied; required_any=%s", permission_strings)
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Insufficient permissions: requires any of {permission_strings}",
@@ -392,7 +382,7 @@ def require_any_permission(*permissions):
             f"{section}.{action}" for section, action in permissions
             if has_permission(user, section, action)
         ]
-        logger.info(f"User {user.email} granted access via permissions: {matched_permissions}")
+        logger.debug("Permission granted via %s", matched_permissions)
         
         return user
 
@@ -411,29 +401,43 @@ def clear_auth_cache():
 async def verify_token_ws(token: str) -> Optional[AuthenticatedUser]:
     """Verify JWT token for WebSocket connections using same approach as regular authentication"""
     try:
-        logger.debug(f"WS_AUTH: Verifying WebSocket token - Token preview: {token[:20]}...")
+        logger.debug("WS_AUTH: Verifying WebSocket token")
 
-        # Use same Supabase verification as regular authentication
+        local_payload = None
         try:
-            response = supabase.auth.get_user(token)
-            user = response.user
+            local_payload = decode_access_token(token)
+            if is_access_token_revoked(local_payload):
+                return None
+
+            class LocalTokenUser:
+                def __init__(self, payload):
+                    self.id = payload.get("sub")
+                    self.email = payload.get("email")
+                    self.app_metadata = payload.get("app_metadata", {})
+                    self.raw_app_metadata = self.app_metadata
+
+            user = LocalTokenUser(local_payload)
         except Exception as e:
-            logger.warning(f"WS_AUTH: Token verification failed: {e.__class__.__name__}")
-            return None
+            try:
+                response = supabase.auth.get_user(token)
+                user = response.user
+            except Exception:
+                logger.warning(f"WS_AUTH: Token verification failed: {e.__class__.__name__}")
+                return None
 
         if not user:
             logger.warning("WS_AUTH: No user found for provided token")
             return None
 
         # Get user permissions (same as regular auth)
-        logger.debug(f"WS_AUTH: Fetching permissions for user {user.id}")
+        logger.debug("WS_AUTH: Fetching permissions")
         permissions_response = (
             supabase.service.table("user_permissions").select("section, action").eq("user_id", user.id).execute()
         )
         permissions = [Permission(**perm) for perm in permissions_response.data]
 
         # Get user cities (same table name as regular auth)
-        logger.debug(f"WS_AUTH: Fetching cities for user {user.id}")
+        logger.debug("WS_AUTH: Fetching city assignments")
         cities_response = supabase.service.table("users_city").select("city_name").eq("user_id", user.id).execute()
         # Ensure cities are always lowercase for consistency (same as regular auth)
         user_cities = [city["city_name"].lower() for city in cities_response.data if city.get("city_name")]
@@ -459,7 +463,7 @@ async def verify_token_ws(token: str) -> Optional[AuthenticatedUser]:
                         tenant_role = role_value
                         break
         except Exception as tenant_role_error:
-            logger.warning(f"WS_AUTH: Failed to fetch tenant role for user {user.id}: {tenant_role_error}")
+            logger.warning("WS_AUTH: Failed to fetch tenant role: %s", type(tenant_role_error).__name__)
 
         # Check if user is admin (same logic as regular auth)
         role = None
@@ -468,7 +472,7 @@ async def verify_token_ws(token: str) -> Optional[AuthenticatedUser]:
         elif hasattr(user, "app_metadata") and user.app_metadata:
             role = user.app_metadata.get("role")
 
-        is_admin = user.email in ADMIN_EMAILS or role == "admin" or tenant_role == "admin"
+        is_admin = role in ("admin", "owner") or tenant_role in ("admin", "owner")
 
         # Get allowed cities (same logic as regular auth)
         allowed_city_map = {}
@@ -492,7 +496,7 @@ async def verify_token_ws(token: str) -> Optional[AuthenticatedUser]:
                     if key not in allowed_city_map:
                         allowed_city_map[key] = city
             except Exception as allowed_error:
-                logger.warning(f"WS_AUTH: Failed to resolve allowed cities for user {user.id}: {allowed_error}")
+                logger.warning("WS_AUTH: Failed to resolve allowed cities: %s", type(allowed_error).__name__)
 
         # when no active properties exist in those cities. Users explicitly assigned
         # to cities in users_city table should keep that access regardless of properties.
@@ -501,16 +505,24 @@ async def verify_token_ws(token: str) -> Optional[AuthenticatedUser]:
         if is_admin:
             if allowed_city_map:
                 user_cities = list(allowed_city_map.values())
-                logger.debug(f"WS_AUTH: Admin user, granted access to all cities from properties: {user_cities}")
+                logger.debug("WS_AUTH: Administrator received %d property cities", len(user_cities))
             else:
                 # Keep user's explicitly assigned cities even if no properties exist
-                logger.debug(f"WS_AUTH: Admin user, keeping assigned cities (no properties found): {user_cities}")
+                logger.debug("WS_AUTH: Administrator kept assigned cities")
         
-        logger.info(f"WS_AUTH: Final user cities after processing: {user_cities}")
+        logger.debug("WS_AUTH: Final city count: %d", len(user_cities))
 
         # Use the comprehensive tenant resolver (same as regular auth)
-        logger.info(f"WS_AUTH: Resolving tenant for user {user.email}")
-        tenant_id = await TenantResolver.resolve_tenant_id(token=token, user_id=user.id, user_email=user.email)
+        logger.debug("WS_AUTH: Resolving tenant")
+        tenant_id = (
+            local_payload.get("tenant_id")
+            if local_payload
+            else await TenantResolver.resolve_tenant_id(
+                token=token, user_id=user.id, user_email=user.email
+            )
+        )
+        if not tenant_id:
+            return None
 
         auth_user = AuthenticatedUser(
             id=user.id,
@@ -521,9 +533,13 @@ async def verify_token_ws(token: str) -> Optional[AuthenticatedUser]:
             tenant_id=tenant_id,
         )
 
-        logger.info(f"WS_AUTH: Success - {user.email} (ID: {user.id}), tenant={tenant_id}, cities={len(user_cities)}, perms={len(permissions)}")
+        logger.info(
+            "WS_AUTH: Success; cities=%d, permissions=%d",
+            len(user_cities),
+            len(permissions),
+        )
         return auth_user
 
     except Exception as e:
-        logger.error(f"WS_AUTH: Failed ({type(e).__name__}): {str(e)}")
+        logger.error("WS_AUTH: Failed (%s)", type(e).__name__)
         return None

@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from ...core.auth import authenticate_request, auth_cache
-from ...core.tenant_resolver import TenantResolver
 from ...models.auth import AuthenticatedUser
 from ...database import supabase
+from ...core.tenant_access import require_user_in_operator_tenant
 import logging
 import hashlib
 
@@ -65,7 +65,7 @@ async def get_current_user_info(
             token = auth_header[7:]
             token_hash = hashlib.sha256(token.encode()).hexdigest()[:16]
             if token_hash in auth_cache:
-                logger.info(f"AUTH /me: Clearing cache for user {user.email} on refresh request")
+                logger.info("AUTH /me: Clearing authentication cache on refresh request")
                 del auth_cache[token_hash]
     try:
         # In parallel, fetch metadata and department assignments
@@ -91,14 +91,14 @@ async def get_current_user_info(
         ]
         
         # This ensures /auth/me returns correct tenant like other endpoints
-        tenant_id = await TenantResolver.resolve_tenant_id(user_id=user.id, user_email=user.email)
-        logger.info(f"AUTH /me: Fresh tenant lookup for {user.email}: {tenant_id}")
+        tenant_id = user.tenant_id
+        logger.debug("AUTH /me: Fresh tenant lookup completed")
         
         # Add smart view permissions if user has access
         if tenant_id and not user.is_admin:
             # Always add smart view permissions for non-admin users with a tenant
             # This ensures users can access smart views they have been granted
-            logger.info(f"Adding smart view permissions for user {user.email} with tenant {tenant_id}")
+            logger.debug("Adding smart view permissions")
             
             # Get all active smart views for the tenant
             try:
@@ -130,7 +130,7 @@ async def get_current_user_info(
                         added_count += 1
                         logger.debug(f"Added permission: {smart_view_permission}")
                 
-                logger.info(f"Added {added_count} smart view permissions for user {user.email} (total smart views: {len(smart_views)})")
+                logger.debug("Added %d smart view permissions", added_count)
             except Exception as e:
                 logger.error(f"Failed to fetch smart views for permissions: {e}")
 
@@ -160,9 +160,12 @@ async def get_user_departments_endpoint(
 ):
     """Get departments for a specific user"""
     try:
+        require_user_in_operator_tenant(user, user_id)
         departments = await get_user_departments(user_id)
         # Return just the department IDs for simplicity
         return {"department_ids": [dept["id"] for dept in departments]}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to get departments for user {user_id}: {e}")
         raise HTTPException(

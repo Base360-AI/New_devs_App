@@ -15,12 +15,12 @@ dependencies = [
     "openai>=2.1.0",
     "orjson>=3.11.1",
     "pandas>=2.3.2",
-    "pillow==10.2.0",
+    "pillow>=12.3.0",
     "psycopg2-binary>=2.9.10",
     "pydantic-settings>=2.10.1",
     "pydantic[email]>=2.11.7",
     "pyhumps>=3.8.0",
-    "python-jose>=3.5.0",
+    "pyjwt>=2.10.1",
     "python-multipart>=0.0.20",
     "qrcode>=8.2",
     "redis>=5.0.0",
@@ -32,7 +32,7 @@ dependencies = [
     "supabase>=2.18.0",
     "tenacity>=9.1.2",
     "uvicorn[standard]>=0.35.0",
-    "wheel==0.45.1",
+    "wheel>=0.46.2",
 ]
 
 [dependency-groups]

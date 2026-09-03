@@ -428,7 +428,7 @@ def make_verification_counts_cache_key(tenant_id: str) -> str:
 
 def make_template_portals_cache_key(template_id: str, tenant_id: str, page: int = 1, search: Optional[str] = None) -> str:
     """Generate cache key for template portals summary"""
-    search_key = hashlib.md5((search or "").encode()).hexdigest()[:8] if search else "none"
+    search_key = hashlib.sha256((search or "").encode()).hexdigest()[:12] if search else "none"
     return f"template_portals:{template_id}:tenant:{tenant_id}:page:{page}:search:{search_key}"
 
 def make_portal_data_cache_key(portal_token: str, tenant_id: str) -> str:

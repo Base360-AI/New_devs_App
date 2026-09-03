@@ -64,7 +64,7 @@ async def get_profile(
 ):
     """Get current user's profile, preferences, and notification settings"""
     try:
-        logger.info(f"User {user.email} is fetching their profile.")
+        logger.debug("Authenticated user is fetching their profile")
         
         # Create default profile data in case tables don't exist or profile is missing
         now_iso = datetime.utcnow().isoformat()
@@ -178,7 +178,7 @@ async def update_profile(
 ):
     """Update current user's profile information"""
     try:
-        logger.info(f"User {user.email} is updating their profile.")
+        logger.info("Authenticated user is updating their profile")
         
         # Prepare update data (only include non-None values)
         update_data = {}
@@ -222,7 +222,7 @@ async def update_preferences(
 ):
     """Update current user's UI and general preferences"""
     try:
-        logger.info(f"User {user.email} is updating their preferences.")
+        logger.info("Authenticated user is updating their preferences")
         
         # Prepare update data
         update_data = preferences_update.dict(exclude_unset=True)
@@ -264,7 +264,7 @@ async def update_notification_preference(
 ):
     """Update notification preferences for a specific category"""
     try:
-        logger.info(f"User {user.email} is updating notification preferences for category {category}.")
+        logger.info("Authenticated user is updating notification preferences")
         
         # Prepare update data
         update_data = preference_update.dict(exclude_unset=True)
@@ -314,7 +314,7 @@ async def upload_avatar(
 ):
     """Upload and set user avatar image"""
     try:
-        logger.info(f"User {user.email} is uploading an avatar.")
+        logger.info("Authenticated user is uploading an avatar")
         
         # Validate file
         if not file.filename:
@@ -410,7 +410,7 @@ async def delete_avatar(
 ):
     """Delete user's current avatar"""
     try:
-        logger.info(f"User {user.email} is deleting their avatar.")
+        logger.info("Authenticated user is deleting their avatar")
         
         # Get current profile to find avatar URL
         profile_response = supabase.table('user_profiles').select('avatar_url').eq('user_id', user.id).execute()

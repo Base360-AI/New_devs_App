@@ -32,13 +32,6 @@ l2_cache = TTLCache(maxsize=100, ttl=300)  # 5 minutes TTL, 100 tenants max
 TARGET_RESPONSE_TIME_MS = 50  # Target 50ms response time
 CACHE_WARM_UP_BATCH_SIZE = 10  # Number of users to warm up at once
 
-# Admin emails for permission check
-ADMIN_EMAILS = [
-    "sid@theflexliving.com",
-    "raouf@theflexliving.com",
-    "michael@theflexliving.com",
-]
-
 class BootstrapResponse(BaseModel):
     """Complete bootstrap data for instant app initialization"""
     user: Dict[str, Any]
@@ -62,7 +55,7 @@ def get_tenant_cache_key(tenant_id: str) -> str:
 async def get_user_permissions(user_id: str, email: str, role: Optional[str], tenant_id: Optional[str] = None) -> List[Dict[str, str]]:
     """Get user permissions including smart view permissions"""
     # Check if user is admin
-    is_admin = email in ADMIN_EMAILS or role == "admin"
+    is_admin = role in ("admin", "owner")
     
     if is_admin:
         return [{"section": "*", "action": "*"}]
@@ -360,7 +353,7 @@ async def bootstrap_app(
     cache_hit = False
     
     if not force_refresh and cache_key in l1_cache:
-        logger.info(f"L1 cache hit for user {current_user.email}")
+        logger.debug("L1 bootstrap cache hit")
         cache_hit = True
         cached_data = l1_cache[cache_key]
         
@@ -375,7 +368,7 @@ async def bootstrap_app(
         return BootstrapResponse(**cached_data)
     
     # Parallel fetch all data
-    logger.info(f"[BOOTSTRAP] Fetching data for user: {current_user.email} (ID: {current_user.id}, tenant: {tenant_id}, is_admin: {current_user.is_admin})")
+    logger.debug("[BOOTSTRAP] Fetching data; admin=%s", current_user.is_admin)
     
     # Create tasks for parallel execution
     tasks = []
@@ -437,7 +430,7 @@ async def bootstrap_app(
     departments = results[4] if not isinstance(results[4], Exception) else []
     
     # Log detailed permission information
-    logger.info(f"[BOOTSTRAP] Permissions for {current_user.email}: {len(permissions)} total")
+    logger.debug("[BOOTSTRAP] Permission count=%d", len(permissions))
     if permissions:
         # Log first 10 permissions for debugging
         logger.info(f"[BOOTSTRAP] Sample permissions: {permissions[:10]}")
@@ -448,7 +441,7 @@ async def bootstrap_app(
         else:
             logger.info("[BOOTSTRAP] No reservation-related permissions found")
     else:
-        logger.warning(f"[BOOTSTRAP] No permissions found for user {current_user.email} (ID: {current_user.id})")
+        logger.warning("[BOOTSTRAP] No permissions found for authenticated user")
     
     # Build response
     response_data = {
@@ -515,7 +508,7 @@ async def invalidate_cache(
         cache_key = get_cache_key(current_user.id, tenant_id)
         if cache_key in l1_cache:
             del l1_cache[cache_key]
-        logger.info(f"Invalidated cache for user {current_user.email}")
+        logger.info("Invalidated bootstrap cache for authenticated user")
         
     elif scope == "tenant" and tenant_id:
         # Invalidate tenant's L2 cache

@@ -53,7 +53,7 @@ async def delete_from_storage(bucket_name: str, file_path: str) -> bool:
         response = supabase.storage.from_(bucket_name).remove([file_path])
         return True
     except Exception as e:
-        logger.error(f"Failed to delete from storage: {str(e)}")
+        logger.error("Failed to delete from storage: %s", type(e).__name__)
         return False
 
 async def get_storage_url(bucket_name: str, file_path: str) -> str:

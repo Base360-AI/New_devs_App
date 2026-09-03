@@ -5,12 +5,12 @@ Enhanced with centralized tenant context caching
 """
 from fastapi import APIRouter, Depends, HTTPException, status
 from typing import List, Dict, Any, Optional
-from ...core.auth import authenticate_request, ADMIN_EMAILS
+from ...core.auth import authenticate_request, require_admin
+from ...core.tenant_access import require_user_in_operator_tenant
 from ...models.auth import AuthenticatedUser
 from ...database import supabase
 from ...core.redis_client import redis_client
 from ...core.tenant_cache import tenant_cache
-from ...core.tenant_resolver import TenantResolver
 import json
 import time
 import logging
@@ -23,12 +23,6 @@ router = APIRouter(prefix="/fast", tags=["fast-access"])
 # Cache configuration
 CACHE_TTL = 3600  # 1 hour cache for city access
 GLOBAL_CACHE_TTL = 7200  # 2 hours for global city list
-
-# This prevents complete system lockout while maintaining security
-TENANT_EMERGENCY_CITIES = {
-    "5a382f72-aec3-40f1-9063-89476ae00669": ["berlin"],  # Homely tenant - Berlin only
-    "a860bda4-b44f-471c-9464-8456bbeb7d38": ["london", "paris", "algiers", "lisbon"],  # The Flex tenant - All cities
-}
 
 def get_user_city_cache_key(user_id: str, tenant_id: str) -> str:
     """Generate cache key for user city access"""
@@ -160,21 +154,10 @@ async def get_city_access_fast(
     
     try:
         user_id = user.id
-        user_email = user.email
-        
-        # ✅ UNIFIED TENANT RESOLUTION: Use same TenantResolver as auth.py for consistency
-        logger.info(f"🔍 TENANT_RESOLUTION: Starting unified tenant resolution for user {user_email}")
-        
-        # Use the same comprehensive tenant resolver as authentication
-        tenant_id = await TenantResolver.resolve_tenant_id(user_id=user_id, user_email=user_email)
-        
-        logger.info(f"✅ TENANT_RESOLUTION: Resolved tenant_id for {user_email}: {tenant_id}")
-        
-        # 🔍 AUTH_DEBUG: Log authenticated user details for debugging
-        logger.info(f"🔐 AUTH_USER_DEBUG: User {user.email} (ID: {user_id}) with resolved tenant_id: {tenant_id}")
+        tenant_id = user.tenant_id
         
         if not tenant_id or tenant_id.strip() == '':
-            logger.error(f"TENANT_RESOLUTION_FAILED: User {user.email} has no valid tenant_id")
+            logger.error("TENANT_RESOLUTION_FAILED: Authenticated user has no valid tenant_id")
             return {
                 "cities": [],
                 "is_admin": False,
@@ -186,18 +169,18 @@ async def get_city_access_fast(
         
         # 🔒 VALIDATE: Ensure tenant_id is not suspicious
         if len(tenant_id) < 3 or tenant_id.isdigit():
-            logger.error(f"SUSPICIOUS_TENANT_ID: User {user.email} has suspicious tenant_id: '{tenant_id}'")
+            logger.error("SUSPICIOUS_TENANT_ID: Authenticated tenant identifier is invalid")
             return {
                 "cities": [],
                 "is_admin": False,
                 "response_time_ms": int((time.time() - start_time) * 1000),
                 "cache_hit": False,
                 "error": "invalid_tenant_id",
-                "message": f"Invalid tenant identifier: {tenant_id}"
+                "message": "Invalid tenant identifier"
             }
         
         # Check if user is admin - enhanced to include tenant role check
-        is_admin = user.is_admin or user.email in ADMIN_EMAILS
+        is_admin = user.is_admin
         
         # ✅ SIMPLIFIED ADMIN DETECTION: Use admin status from authentication
         # Additional tenant role check for completeness
@@ -215,19 +198,19 @@ async def get_city_access_fast(
                     is_owner = tenant_role_result.data[0].get('is_owner', False)
                     is_admin = tenant_role in ['admin'] or is_owner
                     if is_admin:
-                        logger.info(f"🔍 ADMIN_DETECTED: User {user.email} is admin via tenant role: {tenant_role}, is_owner: {is_owner}")
+                        logger.debug("ADMIN_DETECTED: Tenant administrator role found")
                 
             except Exception as e:
-                logger.warning(f"⚠️ ADMIN_CHECK: Failed to check tenant role for user {user.email}: {e}")
+                logger.warning("ADMIN_CHECK: Failed to check tenant role: %s", type(e).__name__)
         
-        logger.info(f"🔐 ADMIN_STATUS: User {user.email} is_admin = {is_admin}")
+        logger.debug("ADMIN_STATUS: is_admin=%s", is_admin)
         
         # ✅ SIMPLIFIED CACHING: Check cache for non-admin users only
         if not is_admin:
             cached_cities = await tenant_cache.get_city_access(tenant_id, user_id)
             if cached_cities is not None:
                 elapsed = int((time.time() - start_time) * 1000)
-                logger.info(f"CACHE_HIT: User {user.email} (tenant {tenant_id}) - {len(cached_cities)} cities")
+                logger.debug("CACHE_HIT: %d cities", len(cached_cities))
                 return {
                     "cities": cached_cities,
                     "is_admin": is_admin,
@@ -236,15 +219,15 @@ async def get_city_access_fast(
                     "tenant_id": tenant_id
                 }
         else:
-            logger.info(f"ADMIN_CACHE_SKIP: Skipping cache for admin user {user.email}")
+            logger.debug("ADMIN_CACHE_SKIP")
         
         # ✅ FETCH CITIES: Apply the corrected logic based on user type
-        logger.info(f"FETCHING_CITIES: Getting cities for user {user.email} (tenant {tenant_id}, admin: {is_admin})")
+        logger.debug("FETCHING_CITIES: admin=%s", is_admin)
         
         try:
             if is_admin:
                 # ✅ SIMPLIFIED ADMIN LOGIC: Direct query of all_properties table filtered by tenant_id
-                logger.info(f"🔍 ADMIN_CITIES: Getting all cities from properties for admin {user.email} in tenant {tenant_id}")
+                logger.debug("ADMIN_CITIES: Fetching tenant property cities")
                 
                 try:
                     # First check total properties in tenant (for debugging)
@@ -254,7 +237,7 @@ async def get_city_access_fast(
                         .execute()
                     
                     total_properties = count_result.count if hasattr(count_result, 'count') else len(count_result.data or [])
-                    logger.info(f"📊 ADMIN_CITIES_DEBUG: Total properties in tenant {tenant_id}: {total_properties}")
+                    logger.debug("ADMIN_CITIES: Total properties=%d", total_properties)
                     
                     # Now get cities
                     result = supabase.service.table('all_properties')\
@@ -263,20 +246,16 @@ async def get_city_access_fast(
                         .not_.is_('city', 'null')\
                         .execute()
                     
-                    logger.info(f"🔍 ADMIN_CITIES_RAW: Query result - error: {result.error}, data count: {len(result.data or [])}")
+                    logger.debug("ADMIN_CITIES: Query rows=%d", len(result.data or []))
                     
                     if result.error:
-                        logger.error(f"❌ ADMIN_CITIES_ERROR: Database error for tenant {tenant_id}: {result.error}")
+                        logger.error("ADMIN_CITIES_ERROR: Database query failed")
                         cities = []
                     else:
                         # Extract unique cities, filter out empty/null values
                         cities_set = set()
                         properties_count = len(result.data or [])
-                        logger.info(f"🏢 ADMIN_CITIES: Found {properties_count} properties with city data in tenant {tenant_id}")
-                        
-                        # Log first few rows for debugging
-                        if result.data:
-                            logger.info(f"📝 ADMIN_CITIES_SAMPLE: First 3 rows: {result.data[:3]}")
+                        logger.debug("ADMIN_CITIES: Properties with city data=%d", properties_count)
                         
                         for row in (result.data or []):
                             city = row.get('city')
@@ -286,36 +265,31 @@ async def get_city_access_fast(
                                     cities_set.add(city_clean)
                         
                         cities = sorted(list(cities_set))
-                        logger.info(f"🌆 ADMIN_CITIES: Extracted {len(cities)} unique cities from properties: {cities}")
+                        logger.debug("ADMIN_CITIES: Extracted %d unique cities", len(cities))
                         
                         if not cities:
-                            logger.warning(f"⚠️ ADMIN_CITIES_EMPTY: No cities found in properties for tenant {tenant_id}")
-                            logger.warning(f"⚠️ ADMIN_CITIES_EMPTY: Total properties: {total_properties}, Properties with city: {properties_count}")
-                            emergency_cities = TENANT_EMERGENCY_CITIES.get(tenant_id, [])
-                            if emergency_cities:
-                                cities = emergency_cities.copy()
-                                logger.critical(f"🆘 ADMIN_EMERGENCY: Using emergency cities {cities} for tenant {tenant_id}")
-                                logger.critical(f"📋 ADMIN_EMERGENCY: Tenant appears to have no properties configured")
+                            logger.warning(
+                                "ADMIN_CITIES_EMPTY: total_properties=%d, properties_with_city=%d",
+                                total_properties,
+                                properties_count,
+                            )
                             
                 except Exception as db_error:
-                    logger.error(f"❌ ADMIN_CITIES_DB_ERROR: Failed to query properties for tenant {tenant_id}: {db_error}")
-                    emergency_cities = TENANT_EMERGENCY_CITIES.get(tenant_id, [])
-                    cities = emergency_cities.copy() if emergency_cities else []
-                    if cities:
-                        logger.critical(f"🆘 ADMIN_EMERGENCY: Using emergency cities {cities} due to database error")
+                    logger.error("ADMIN_CITIES_DB_ERROR: %s", type(db_error).__name__)
+                    cities = []
                 
-                logger.info(f"✅ ADMIN_ACCESS: Admin {user.email} has access to {len(cities)} cities in tenant {tenant_id}: {cities}")
+                logger.debug("ADMIN_ACCESS: %d cities", len(cities))
             else:
                 # ✅ NON-ADMIN LOGIC: Query users_city table for assigned cities
-                logger.info(f"🔍 USER_CITIES: Querying users_city table for user_id: {user_id}")
+                logger.debug("USER_CITIES: Querying city assignments")
                 result = supabase.service.table('users_city')\
                     .select('city_name')\
                     .eq('user_id', user_id)\
                     .execute()
                 
                 if result.error:
-                    logger.error(f"❌ USER_CITIES_ERROR: Database error for user {user.email}: {result.error}")
-                    raise Exception(f"Database error: {result.error}")
+                    logger.error("USER_CITIES_ERROR: Database query failed")
+                    raise RuntimeError("Database query failed")
                 
                 # Extract and clean city names
                 cities = []
@@ -327,17 +301,17 @@ async def get_city_access_fast(
                             cities.append(city_clean)
                 
                 cities = sorted(list(set(cities)))  # Remove duplicates and sort
-                logger.info(f"✅ USER_CITIES: User {user.email} assigned to {len(cities)} cities: {cities}")
+                logger.debug("USER_CITIES: %d assigned cities", len(cities))
             
             # 🔒 FINAL VALIDATION: Ensure we have valid results
             if not isinstance(cities, list):
-                logger.error(f"INVALID_RESULT: Cities result is not a list for user {user.email}")
+                logger.error("INVALID_RESULT: Cities result is not a list")
                 cities = []
             
             # Cache the result using centralized caching (will be handled automatically by tenant_cache.get_city_access)
             
             elapsed = int((time.time() - start_time) * 1000)
-            logger.info(f"SUCCESS: User {user.email} (tenant {tenant_id}) has access to {len(cities)} cities: {cities}")
+            logger.debug("CITY_ACCESS_SUCCESS: %d cities", len(cities))
             
             return {
                 "cities": cities,
@@ -348,7 +322,7 @@ async def get_city_access_fast(
             }
             
         except Exception as db_error:
-            logger.error(f"DATABASE_FETCH_ERROR: Failed to fetch cities for user {user.email}: {db_error}")
+            logger.error("DATABASE_FETCH_ERROR: %s", type(db_error).__name__)
             # Don't cache errors, return empty with error info
             elapsed = int((time.time() - start_time) * 1000)
             return {
@@ -357,18 +331,18 @@ async def get_city_access_fast(
                 "response_time_ms": elapsed,
                 "cache_hit": False,
                 "error": "database_fetch_failed",
-                "message": f"Failed to fetch cities: {str(db_error)}"
+                "message": "City access is temporarily unavailable"
             }
         
     except Exception as e:
-        logger.error(f"Error in fast city access: {e}")
+        logger.error("Fast city access failed: %s", type(e).__name__)
         elapsed = int((time.time() - start_time) * 1000)
         return {
             "cities": [],
             "is_admin": False,
             "response_time_ms": elapsed,
             "cache_hit": False,
-            "error": str(e)
+            "error": "city_access_failed"
         }
 
 @router.post("/invalidate-city-cache")
@@ -386,6 +360,19 @@ async def invalidate_city_cache(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access required"
         )
+
+    if not user.tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No active tenant membership",
+        )
+
+    if tenant_id and tenant_id != user.tenant_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resource not found")
+
+    tenant_id = tenant_id or user.tenant_id
+    if user_id:
+        await require_user_in_operator_tenant(user, user_id)
     
     if not redis_client.is_connected:
         return {"success": False, "message": "Redis not available"}
@@ -414,10 +401,10 @@ async def invalidate_city_cache(
         }
         
     except Exception as e:
-        logger.error(f"Error invalidating cache: {e}")
+        logger.error("City cache invalidation failed: %s", type(e).__name__)
         return {
             "success": False,
-            "message": str(e)
+            "message": "Cache invalidation is temporarily unavailable"
         }
 
 @router.get("/city-access-formatted")
@@ -459,7 +446,7 @@ async def get_city_access_formatted(
 
 @router.post("/debug/clear-cache")
 async def clear_city_cache_debug(
-    user: AuthenticatedUser = Depends(authenticate_request)
+    user: AuthenticatedUser = Depends(require_admin)
 ):
     """Debug endpoint to clear city cache for current user's tenant"""
     try:
@@ -477,27 +464,26 @@ async def clear_city_cache_debug(
                 result = await redis_client.delete(cache_key)
                 if result:
                     cleared_count += 1
-                logger.info(f"🗑️ DEBUG_CACHE_CLEAR: Cleared global cities cache for tenant {tenant_id}")
+                logger.info("DEBUG_CACHE_CLEAR: Cleared global cities cache")
             except Exception as e:
-                logger.error(f"Failed to clear global cache: {e}")
+                logger.error("Failed to clear global cache: %s", type(e).__name__)
         
         # Clear user-specific cache (if any)
         try:
             from ...core.tenant_cache import invalidate_city_access_cache
             invalidate_city_access_cache(user.id, tenant_id)
             cleared_count += 1
-            logger.info(f"🗑️ DEBUG_CACHE_CLEAR: Cleared user cache for {user.email}")
+            logger.info("DEBUG_CACHE_CLEAR: Cleared user cache")
         except Exception as e:
-            logger.error(f"Failed to clear user cache: {e}")
+            logger.error("Failed to clear user cache: %s", type(e).__name__)
         
         return {
             "success": True,
             "tenant_id": tenant_id,
-            "user_email": user.email,
             "caches_cleared": cleared_count,
             "message": f"Cleared {cleared_count} caches for tenant {tenant_id}"
         }
         
     except Exception as e:
-        logger.error(f"Error in debug cache clear: {e}")
-        return {"success": False, "error": str(e)}
+        logger.error("Debug cache clear failed: %s", type(e).__name__)
+        return {"success": False, "error": "cache_clear_failed"}

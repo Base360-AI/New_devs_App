@@ -213,7 +213,6 @@ export function CityAccessProvider({ children }: { children: React.ReactNode }) 
       const endpoint = `${backend}/api/v1/filters/cities-and-portfolios`;
       console.log('[CityAccessContext] Fetching from:', endpoint);
       console.log('[CityAccessContext] Auth token present:', !!session.access_token);
-      console.log('[CityAccessContext] Token preview:', session.access_token.substring(0, 20) + '...');
       
       const resp = await fetch(endpoint, {
         headers: {

@@ -63,7 +63,7 @@ async def validate_session_endpoint(
     that a session is still valid on the server side.
     """
     try:
-        logger.info(f"Validating session {request.session_id} for user {user.email}")
+        logger.info("Validating persistent session")
         
         # Ensure the requesting user matches the session user
         if request.user_id != user.id:
@@ -104,10 +104,10 @@ async def validate_session_endpoint(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error validating session {request.session_id}: {str(e)}")
+        logger.error("Persistent session validation failed: %s", type(e).__name__)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Session validation failed: {str(e)}"
+            detail="Session validation is temporarily unavailable"
         )
 
 @router.post("/create-session", response_model=SessionCreationResponse)
@@ -120,7 +120,7 @@ async def create_session_endpoint(
     Create a new persistent session for the authenticated user
     """
     try:
-        logger.info(f"Creating session for user {user.email} on device {request.device_id}")
+        logger.info("Creating persistent session")
         
         # Extract client info
         user_agent = request.user_agent or http_request.headers.get("user-agent", "")
@@ -150,10 +150,10 @@ async def create_session_endpoint(
         )
         
     except Exception as e:
-        logger.error(f"Error creating session for user {user.email}: {str(e)}")
+        logger.error("Persistent session creation failed: %s", type(e).__name__)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Session creation failed: {str(e)}"
+            detail="Session creation is temporarily unavailable"
         )
 
 @router.post("/refresh-session")
@@ -166,7 +166,7 @@ async def refresh_session_endpoint(
     Refresh session tokens for a persistent session
     """
     try:
-        logger.info(f"Refreshing session {request.session_id} for user {user.email}")
+        logger.info("Refreshing persistent session")
         
         # Ensure the requesting user matches the session user
         if request.user_id != user.id:
@@ -202,10 +202,10 @@ async def refresh_session_endpoint(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error refreshing session {request.session_id}: {str(e)}")
+        logger.error("Persistent session refresh failed: %s", type(e).__name__)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Session refresh failed: {str(e)}"
+            detail="Session refresh is temporarily unavailable"
         )
 
 @router.delete("/session/{session_id}")
@@ -217,7 +217,7 @@ async def deactivate_session_endpoint(
     Deactivate a specific session
     """
     try:
-        logger.info(f"Deactivating session {session_id} for user {user.email}")
+        logger.info("Deactivating persistent session")
         
         # Validate that the session belongs to the requesting user
         validation_result = await PersistentSessionManager.validate_session(
@@ -246,10 +246,10 @@ async def deactivate_session_endpoint(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error deactivating session {session_id}: {str(e)}")
+        logger.error("Persistent session deactivation failed: %s", type(e).__name__)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Session deactivation failed: {str(e)}"
+            detail="Session deactivation is temporarily unavailable"
         )
 
 @router.delete("/sessions/all")
@@ -260,7 +260,7 @@ async def deactivate_all_sessions_endpoint(
     Deactivate all sessions for the authenticated user (logout from all devices)
     """
     try:
-        logger.info(f"Deactivating all sessions for user {user.email}")
+        logger.info("Deactivating all persistent sessions for authenticated user")
         
         # Deactivate all user sessions
         deactivated_count = await PersistentSessionManager.deactivate_user_sessions(user.id)
@@ -272,10 +272,10 @@ async def deactivate_all_sessions_endpoint(
         }
         
     except Exception as e:
-        logger.error(f"Error deactivating all sessions for user {user.email}: {str(e)}")
+        logger.error("Persistent session deactivation failed: %s", type(e).__name__)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Session deactivation failed: {str(e)}"
+            detail="Session deactivation is temporarily unavailable"
         )
 
 @router.get("/sessions", response_model=UserSessionsResponse)
@@ -287,7 +287,7 @@ async def get_user_sessions_endpoint(
     Get all sessions for the authenticated user
     """
     try:
-        logger.info(f"Getting sessions for user {user.email}")
+        logger.info("Getting persistent sessions for authenticated user")
         
         sessions = await PersistentSessionManager.get_user_sessions(
             user_id=user.id,
@@ -302,10 +302,10 @@ async def get_user_sessions_endpoint(
         )
         
     except Exception as e:
-        logger.error(f"Error getting sessions for user {user.email}: {str(e)}")
+        logger.error("Persistent session lookup failed: %s", type(e).__name__)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get user sessions: {str(e)}"
+            detail="Session lookup is temporarily unavailable"
         )
 
 @router.post("/cleanup/expired")
@@ -323,7 +323,7 @@ async def cleanup_expired_sessions_endpoint(
                 detail="Admin access required"
             )
         
-        logger.info(f"Running expired session cleanup requested by {user.email}")
+        logger.info("Running expired persistent session cleanup")
         
         cleaned_count = await PersistentSessionManager.cleanup_expired_sessions()
         
@@ -336,8 +336,8 @@ async def cleanup_expired_sessions_endpoint(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error during session cleanup: {str(e)}")
+        logger.error("Persistent session cleanup failed: %s", type(e).__name__)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Session cleanup failed: {str(e)}"
+            detail="Session cleanup is temporarily unavailable"
         )

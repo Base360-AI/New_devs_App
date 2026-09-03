@@ -1,8 +1,10 @@
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Dict, Optional, Union, List
 import json
 import os
 import logging
+import secrets
 
 logger = logging.getLogger(__name__)
 
@@ -11,13 +13,16 @@ class Settings(BaseSettings):
     # Core settings
     database_url: str = "postgresql://postgres:postgres@db:5432/propertyflow"
     redis_url: str = "redis://redis:6379/0"
-    secret_key: str = "debug_challenge_secret"
+    # Development gets an ephemeral signing key so a key committed to the
+    # repository can never be used to forge a session. Deployments must provide
+    # a stable SECRET_KEY through their environment.
+    secret_key: str = Field(default_factory=lambda: secrets.token_urlsafe(48))
     
     # Optional legacy settings
     supabase_url: Optional[str] = None
     supabase_service_role_key: Optional[str] = None
     supabase_anon_key: Optional[str] = None
-    token_encryption_key: str = "dummy_key_for_challenge_mode_only_123"
+    token_encryption_key: str = Field(default_factory=lambda: secrets.token_urlsafe(48))
     environment: str = "development"
     n8n_verification_webhook_url: Optional[str] = None
     openai_api_key: Optional[str] = None
@@ -25,49 +30,19 @@ class Settings(BaseSettings):
     # ... allow extra fields just in case
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
     
-    def __init__(self, **kwargs):
-        """Initialize settings with debug logging"""
-        logger.info("🔧 SETTINGS INITIALIZATION DEBUG")
-        logger.info("=" * 50)
-        
-        # Log environment variable availability before Pydantic processing
-        critical_env_vars = {
-            'TOKEN_ENCRYPTION_KEY': os.getenv('TOKEN_ENCRYPTION_KEY'),
-            'SUPABASE_URL': os.getenv('SUPABASE_URL'), 
-            'SUPABASE_SERVICE_ROLE_KEY': os.getenv('SUPABASE_SERVICE_ROLE_KEY'),
-            'SUPABASE_JWT_SECRET': os.getenv('SUPABASE_JWT_SECRET'),
-            'SECRET_KEY': os.getenv('SECRET_KEY')
-        }
-        
-        for var_name, value in critical_env_vars.items():
-            if value:
-                preview = value[:15] + "..." if len(value) > 15 else value
-                logger.info(f"✅ ENV {var_name}: {preview} (len: {len(value)})")
-            else:
-                logger.info(f"❌ ENV {var_name}: NOT SET")
-        
-        # Call parent constructor
-        super().__init__(**kwargs)
-        
-        # Log what Pydantic actually loaded
-        logger.info("📊 PYDANTIC LOADED VALUES:")
-        loaded_values = {
-            'token_encryption_key': getattr(self, 'token_encryption_key', None),
-            'supabase_url': getattr(self, 'supabase_url', None),
-            'supabase_service_role_key': getattr(self, 'supabase_service_role_key', None),
-            'supabase_jwt_secret': getattr(self, 'supabase_jwt_secret', None),
-            'secret_key': getattr(self, 'secret_key', None)
-        }
-        
-        for field_name, value in loaded_values.items():
-            if value:
-                preview = str(value)[:15] + "..." if len(str(value)) > 15 else str(value)
-                logger.info(f"✅ LOADED {field_name}: {preview} (len: {len(str(value))})")
-            else:
-                logger.info(f"❌ LOADED {field_name}: NOT SET")
-        
-        logger.info("=" * 50)
-        logger.info("🏁 SETTINGS INITIALIZATION COMPLETE")
+    @model_validator(mode="after")
+    def validate_security_settings(self):
+        """Fail closed when production is started with weak local defaults."""
+        if len(self.secret_key.encode("utf-8")) < 32:
+            raise ValueError("SECRET_KEY must be at least 32 bytes")
+        if self.environment.lower() not in {"development", "test"}:
+            if "DATABASE_URL" not in os.environ:
+                raise ValueError("DATABASE_URL must be configured outside development")
+            if "SECRET_KEY" not in os.environ:
+                raise ValueError("SECRET_KEY must be configured outside development")
+            if "TOKEN_ENCRYPTION_KEY" not in os.environ:
+                raise ValueError("TOKEN_ENCRYPTION_KEY must be configured outside development")
+        return self
 
     # Hostaway API Tokens (JSON string)
     hostaway_tokens: Optional[str] = None

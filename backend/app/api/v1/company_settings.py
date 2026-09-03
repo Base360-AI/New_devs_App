@@ -81,7 +81,7 @@ async def get_company_settings(
                 # Cache expired, remove it
                 del company_settings_cache[cache_key]
         
-        logger.info(f"Fetching company settings from database for user {current_user.email} (tenant: {tenant_id})")
+        logger.debug("Fetching company settings")
         
         if not tenant_id:
             # Fallback: get from user_tenants using service role to avoid RLS edge cases
@@ -97,7 +97,7 @@ async def get_company_settings(
             if getattr(tenant_result, 'data', None):
                 tenant_id = tenant_result.data.get('tenant_id')
             else:
-                logger.warning(f"No tenant found for user {current_user.email}")
+                logger.warning("No tenant found for authenticated user")
                 # Return neutral default settings (no caching for no-tenant case)
                 return {
                     "company_name": "Base360",  # Neutral default, not tenant-specific
@@ -202,7 +202,7 @@ async def update_company_settings(
         if not has_permission(current_user, "settings", "write"):
             raise HTTPException(status_code=403, detail="Insufficient permissions to update settings")
         
-        logger.info(f"Updating company settings for user {current_user.email} (tenant: {current_user.tenant_id})")
+        logger.info("Updating company settings")
         
         # Get tenant_id
         tenant_id = current_user.tenant_id

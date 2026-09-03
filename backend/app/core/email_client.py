@@ -33,7 +33,7 @@ class EmailClient:
     ) -> bool:
         """Send email via SendGrid with support for multiple CC recipients"""
         try:
-            logger.info(f"Attempting to send email to {to_email} with subject: {subject}")
+            logger.info("Attempting to send email")
             
             # Support multiple TO emails separated by commas
             to_emails = [email.strip() for email in to_email.split(',') if email.strip()]
@@ -76,7 +76,7 @@ class EmailClient:
             response = self.sg.client.mail.send.post(request_body=mail.get())
             
             if response.status_code in [200, 201, 202]:
-                logger.info(f"Email sent successfully to {', '.join(to_emails)}")
+                logger.info("Email sent successfully")
                 if cc_emails:
                     logger.info(f"CC sent to: {', '.join(cc_emails)}")
                 return True
@@ -85,7 +85,7 @@ class EmailClient:
                 return False
                 
         except Exception as e:
-            logger.error(f"Error sending email to {to_email}: {str(e)}")
+            logger.error("Email delivery failed: %s", type(e).__name__)
             return False
                 
     async def send_email_with_attachment(self, to_email: str, subject: str, html_content: str, 

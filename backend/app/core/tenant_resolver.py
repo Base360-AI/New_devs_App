@@ -69,7 +69,7 @@ class TenantResolver:
         return None
 
     @staticmethod
-    async def resolve_tenant_id(user_id: str, user_email: str, token: Optional[str] = None) -> str:
+    async def resolve_tenant_id(user_id: str, user_email: str, token: Optional[str] = None) -> Optional[str]:
         """
         Resolve tenant ID for a user.
         
@@ -80,16 +80,31 @@ class TenantResolver:
         Returns:
             Tenant ID
         """
-        # Fallback mapping by known user email.
+        # The two local assignment identities do not exist in Supabase.
         if user_email == "sunset@propertyflow.com":
             return "tenant-a"
         if user_email == "ocean@propertyflow.com":
             return "tenant-b"
-        if user_email == "candidate@propertyflow.com":
-            return "tenant-a"
-            
-        # Default fallback
-        return "tenant-a"
+
+        # Configured users must have an explicit, active membership. Never
+        # silently assign an unknown identity to another customer's tenant.
+        try:
+            from ..database import supabase
+
+            result = (
+                supabase.service.table("user_tenants")
+                .select("tenant_id")
+                .eq("user_id", user_id)
+                .eq("is_active", True)
+                .limit(1)
+                .execute()
+            )
+            if result.data:
+                return result.data[0].get("tenant_id")
+        except Exception as exc:
+            logger.warning("Unable to resolve active tenant: %s", type(exc).__name__)
+
+        return None
 
     @staticmethod
     async def update_user_tenant_metadata(user_id: str, tenant_id: str) -> None:

@@ -4,7 +4,7 @@ Addresses security vulnerabilities in the original city access system
 """
 from fastapi import APIRouter, Depends, HTTPException, status
 from typing import List, Dict, Any, Optional
-from ...core.auth import authenticate_request, ADMIN_EMAILS
+from ...core.auth import authenticate_request
 from ...models.auth import AuthenticatedUser
 from ...database import supabase
 from ...core.redis_client import redis_client
@@ -125,7 +125,7 @@ async def get_user_city_access_fixed(
         tenant_id = user.tenant_id
         
         if not tenant_id or tenant_id.strip() == '':
-            logger.error(f"SECURITY: User {user.email} has no tenant context")
+            logger.error("SECURITY: Authenticated user has no tenant context")
             return {
                 "cities": [],
                 "is_admin": False,
@@ -135,13 +135,13 @@ async def get_user_city_access_fixed(
             }
         
         # Check if user is admin
-        is_admin = user.is_admin or user.email in ADMIN_EMAILS
+        is_admin = user.is_admin
         
         # Try cache first with tenant isolation
         cached_cities = await get_cached_city_access(user_id, tenant_id)
         if cached_cities is not None:
             elapsed = int((time.time() - start_time) * 1000)
-            logger.info(f"CACHE_HIT: User {user.email} (tenant {tenant_id}) - {len(cached_cities)} cities")
+            logger.debug("CACHE_HIT: %d cities", len(cached_cities))
             return {
                 "cities": cached_cities,
                 "is_admin": is_admin,
@@ -151,13 +151,13 @@ async def get_user_city_access_fixed(
             }
         
         # Fetch from database with proper tenant isolation
-        logger.info(f"CACHE_MISS: Fetching cities for user {user.email} (tenant {tenant_id})")
+        logger.debug("CACHE_MISS: Fetching city access")
         
         try:
             if is_admin:
                 # Admin gets all cities in their tenant
                 cities = await get_all_tenant_cities(tenant_id)
-                logger.info(f"ADMIN_ACCESS: User {user.email} has admin access to {len(cities)} cities in tenant {tenant_id}")
+                logger.debug("ADMIN_ACCESS: %d cities", len(cities))
             else:
                 # FIXED: Regular user gets cities with tenant isolation
                 result = supabase.service.table('users_city')\
@@ -167,11 +167,11 @@ async def get_user_city_access_fixed(
                     .execute()
                 
                 if result.error:
-                    logger.error(f"DATABASE_ERROR: Failed to fetch user cities for {user.email}: {result.error}")
+                    logger.error("DATABASE_ERROR: Failed to fetch user cities")
                     raise Exception(f"Database error: {result.error}")
                 
                 user_cities = [row['city_name'].lower().strip() for row in (result.data or []) if row.get('city_name')]
-                logger.info(f"USER_CITIES: User {user.email} is assigned to cities: {user_cities} in tenant {tenant_id}")
+                logger.debug("USER_CITIES: %d assigned cities", len(user_cities))
                 
                 # Additional validation: ensure cities exist in tenant
                 if user_cities:
@@ -180,21 +180,21 @@ async def get_user_city_access_fixed(
                     
                     if len(cities) != len(user_cities):
                         invalid_cities = set(user_cities) - set(all_tenant_cities)
-                        logger.warning(f"INVALID_CITIES: User {user.email} assigned to cities not in tenant {tenant_id}: {invalid_cities}")
+                        logger.warning("INVALID_CITIES: %d assignments are outside tenant", len(invalid_cities))
                 else:
                     cities = []
-                    logger.warning(f"NO_CITIES: User {user.email} has no city assignments in tenant {tenant_id}")
+                    logger.warning("NO_CITIES: Authenticated user has no city assignments")
             
             # Validate results
             if not isinstance(cities, list):
-                logger.error(f"INVALID_RESULT: Cities result is not a list for user {user.email}")
+                logger.error("INVALID_RESULT: Cities result is not a list")
                 cities = []
             
             # Cache the result with tenant isolation
             await set_cached_city_access(user_id, tenant_id, cities)
             
             elapsed = int((time.time() - start_time) * 1000)
-            logger.info(f"SUCCESS: User {user.email} (tenant {tenant_id}) has access to {len(cities)} cities: {cities}")
+            logger.debug("CITY_ACCESS_SUCCESS: %d cities", len(cities))
             
             return {
                 "cities": cities,
@@ -205,7 +205,7 @@ async def get_user_city_access_fixed(
             }
             
         except Exception as db_error:
-            logger.error(f"DATABASE_FETCH_ERROR: Failed to fetch cities for user {user.email}: {db_error}")
+            logger.error("DATABASE_FETCH_ERROR: %s", type(db_error).__name__)
             elapsed = int((time.time() - start_time) * 1000)
             return {
                 "cities": [],
@@ -299,7 +299,7 @@ async def assign_city_to_user_fixed(
             else:
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f"Failed to assign city access: {str(e)}"
+                    detail="City access assignment is temporarily unavailable"
                 )
         
     except HTTPException:
@@ -308,7 +308,7 @@ async def assign_city_to_user_fixed(
         logger.error(f"Error assigning city access: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to assign city access: {str(e)}"
+            detail="City access assignment is temporarily unavailable"
         )
 
 @router.delete("/remove-city")
@@ -371,7 +371,7 @@ async def remove_city_from_user_fixed(
         logger.error(f"Error removing city access: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to remove city access: {str(e)}"
+            detail="City access removal is temporarily unavailable"
         )
 
 @router.get("/tenant-cities")
@@ -412,7 +412,7 @@ async def get_tenant_cities_fixed(
         logger.error(f"Error fetching tenant cities: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch cities: {str(e)}"
+            detail="City lookup is temporarily unavailable"
         )
 
 @router.get("/debug")
@@ -450,7 +450,6 @@ async def debug_city_access(
         
         return {
             "user_id": user_id,
-            "user_email": user.email,
             "tenant_id": tenant_id,
             "is_admin": user.is_admin,
             "user_city_assignments": user_cities_result.data or [],
@@ -463,8 +462,8 @@ async def debug_city_access(
         }
         
     except Exception as e:
-        logger.error(f"Error in debug endpoint: {e}")
+        logger.error("City access diagnostics failed: %s", type(e).__name__)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Debug failed: {str(e)}"
+            detail="Diagnostics are temporarily unavailable"
         )

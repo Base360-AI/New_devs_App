@@ -88,7 +88,7 @@ async def list_departments(
     - If the user is an admin, it lists all departments across all tenants.
     - Otherwise, it lists only the departments that belong to the authenticated user's tenant.
     """
-    logger.info(f"[list_departments] User: {user.email}, Is Admin: {user.is_admin}, Tenant: {user.tenant_id}")
+    logger.debug("[list_departments] admin=%s", user.is_admin)
     
     query = supabase.table("departments").select("*")
 
@@ -96,20 +96,19 @@ async def list_departments(
     # Even admins should only see departments for their current tenant in User Management
     if user.tenant_id:
         query = query.eq("tenant_id", user.tenant_id)
-        logger.info(f"[list_departments] Filtering departments by tenant: {user.tenant_id} (user: {user.email}, admin: {user.is_admin})")
+        logger.debug("[list_departments] Applying tenant filter")
     else:
-        logger.warning(f"[list_departments] No tenant_id for user {user.email} - this may cause tenant isolation issues")
+        logger.warning("[list_departments] Authenticated user has no tenant_id")
 
     try:
         result = query.execute()
         logger.info(f"[list_departments] Found {len(result.data)} departments")
-        logger.debug(f"[list_departments] Departments: {result.data}")
         return result.data
     except Exception as e:
         logger.error(f"Failed to list departments: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to list departments: {str(e)}",
+            detail="Department lookup is temporarily unavailable",
         )
 
 
@@ -161,7 +160,7 @@ async def create_department(
         logger.error(f"Failed to create department: {e}")
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Failed to create department. It might already exist or there was a database error: {str(e)}",
+            detail="The department could not be created",
         )
 
 
@@ -228,7 +227,7 @@ async def update_department(
             status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
         raise HTTPException(
             status_code=status_code,
-            detail=f"Failed to update department: {str(e)}",
+            detail="The department could not be updated",
         )
 
 
@@ -271,7 +270,7 @@ async def delete_department(
             detail = "Cannot delete department. It may still be in use (e.g., users are assigned to it)."
         else:
             status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
-            detail = f"Failed to delete department: {str(e)}"
+            detail = "The department could not be deleted"
         raise HTTPException(status_code=status_code, detail=detail)
 
     return {"success": True, "message": "Department deleted successfully"}
@@ -288,7 +287,7 @@ async def get_my_departments_with_preferences(
     Admins see ALL departments in their tenant, regular users see only their assigned departments.
     Both can set personal visibility preferences.
     """
-    logger.info(f"[get_my_departments_with_preferences] User: {user.email}, Is Admin: {user.is_admin}, Tenant: {user.tenant_id}")
+    logger.debug("[get_my_departments_with_preferences] admin=%s", user.is_admin)
 
     try:
         # If user is admin, get ALL departments in their tenant
@@ -303,7 +302,7 @@ async def get_my_departments_with_preferences(
             )
 
             if not departments_result.data:
-                logger.info(f"[get_my_departments_with_preferences] No active departments found for admin {user.email}")
+                logger.info("[get_my_departments_with_preferences] No active departments found for administrator")
                 return []
 
             department_ids = [dept["id"] for dept in departments_result.data]
@@ -337,7 +336,7 @@ async def get_my_departments_with_preferences(
                     "user_show_in_sidebar": user_show_in_sidebar
                 })
 
-            logger.info(f"[get_my_departments_with_preferences] Returning {len(result)} departments with preferences for admin {user.email}")
+            logger.debug("[get_my_departments_with_preferences] Returning %d administrator departments", len(result))
             return result
 
         # For non-admin users, get their assigned departments
@@ -349,11 +348,11 @@ async def get_my_departments_with_preferences(
         )
 
         if not user_departments_result.data:
-            logger.info(f"[get_my_departments_with_preferences] No departments assigned to user {user.email}")
+            logger.info("[get_my_departments_with_preferences] No assigned departments")
             return []
 
         department_ids = [row["department_id"] for row in user_departments_result.data]
-        logger.info(f"[get_my_departments_with_preferences] User {user.email} has {len(department_ids)} assigned departments")
+        logger.debug("[get_my_departments_with_preferences] %d assigned departments", len(department_ids))
 
         # Get department details
         departments_result = (
@@ -367,7 +366,7 @@ async def get_my_departments_with_preferences(
         )
 
         if not departments_result.data:
-            logger.info(f"[get_my_departments_with_preferences] No active departments found for user {user.email}")
+            logger.info("[get_my_departments_with_preferences] No active departments found")
             return []
 
         # Get user's preferences for these departments
@@ -399,14 +398,14 @@ async def get_my_departments_with_preferences(
                 "user_show_in_sidebar": user_show_in_sidebar
             })
 
-        logger.info(f"[get_my_departments_with_preferences] Returning {len(result)} departments with preferences for user {user.email}")
+        logger.debug("[get_my_departments_with_preferences] Returning %d departments", len(result))
         return result
 
     except Exception as e:
         logger.error(f"Failed to get user departments with preferences: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get departments: {str(e)}",
+            detail="Department lookup is temporarily unavailable",
         )
 
 
@@ -422,7 +421,7 @@ async def update_my_department_preference(
 
     Both admins and regular users can set their preferences.
     """
-    logger.info(f"[update_my_department_preference] User: {user.email}, Is Admin: {user.is_admin}, Department: {department_id}, Show: {preference_in.show_in_sidebar}")
+    logger.debug("[update_my_department_preference] Updating preference")
 
     try:
         # First verify that the department exists in the user's tenant
@@ -481,7 +480,7 @@ async def update_my_department_preference(
                 .eq("department_id", department_id)
                 .execute()
             )
-            logger.info(f"[update_my_department_preference] Updated preference for user {user.email}")
+            logger.debug("[update_my_department_preference] Updated preference")
         else:
             # Create new preference
             result = (
@@ -489,7 +488,7 @@ async def update_my_department_preference(
                 .insert(preference_data)
                 .execute()
             )
-            logger.info(f"[update_my_department_preference] Created new preference for user {user.email}")
+            logger.debug("[update_my_department_preference] Created preference")
 
         if not result.data:
             raise Exception("Failed to update preference")
@@ -506,5 +505,5 @@ async def update_my_department_preference(
         logger.error(f"Failed to update department preference: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to update preference: {str(e)}",
+            detail="The department preference could not be updated",
         )

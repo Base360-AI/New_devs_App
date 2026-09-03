@@ -346,7 +346,6 @@ export async function createUser({
                     body: JSON.stringify({
                         email,
                         name,
-                        tempPassword: password,
                     }),
                 },
             );

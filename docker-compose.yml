@@ -6,11 +6,10 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/propertyflow
       - REDIS_URL=redis://redis:6379/0
-      - SECRET_KEY=debug_challenge_secret
     depends_on:
       - db
       - redis
@@ -22,7 +21,7 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     ports:
-      - "3000:80" # Mapping internal 80 (nginx) to 3000
+      - "127.0.0.1:3000:80" # Local interview environment only
     environment:
       - VITE_API_URL=http://localhost:8000
     depends_on:
@@ -35,7 +34,7 @@ services:
       - POSTGRES_PASSWORD=postgres
       - POSTGRES_DB=propertyflow
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
     volumes:
       # Initialize DB with schema and seeds
       - ./database/schema.sql:/docker-entrypoint-initdb.d/1-schema.sql
@@ -46,7 +45,7 @@ services:
   redis:
     image: redis:alpine
     ports:
-      - "6380:6379" # Maps internal 6379 to host 6380 to avoid local conflicts
+      - "127.0.0.1:6380:6379" # Local access only
 
 volumes:
   pgdata:

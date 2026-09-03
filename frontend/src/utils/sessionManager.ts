@@ -648,9 +648,6 @@ class SessionManager {
       if (session.access_token && session.access_token.includes('.') && session.access_token.split('.').length === 3) {
         const payload = JSON.parse(atob(session.access_token.split('.')[1]));
         tenant_id = payload.tenant_id || '';
-      } else if (session.access_token === "mock-token-123") {
-        // Handle static local token.
-        tenant_id = "tenant-a";
       }
     } catch (error) {
       // Fallback to metadata

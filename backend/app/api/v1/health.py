@@ -9,7 +9,7 @@ from ...database import supabase
 from ...core.redis_client import redis_client
 from ...core.tenant_cache import tenant_cache
 from ...core.async_processing import async_processor
-from ...core.auth import authenticate_request
+from ...core.auth import authenticate_request, require_admin
 from ...models.auth import AuthenticatedUser
 import time
 import logging
@@ -20,7 +20,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/health", tags=["health"])
 
 @router.get("/status")
-async def get_health_status() -> Dict[str, Any]:
+async def get_health_status(
+    _user: AuthenticatedUser = Depends(require_admin),
+) -> Dict[str, Any]:
     """
     Comprehensive health check for backend components
     Used to diagnose 504 timeout issues and system performance
@@ -118,7 +120,9 @@ async def get_health_status() -> Dict[str, Any]:
     return status
 
 @router.get("/db")
-async def get_database_health() -> Dict[str, Any]:
+async def get_database_health(
+    _user: AuthenticatedUser = Depends(require_admin),
+) -> Dict[str, Any]:
     """Detailed database health check for performance monitoring"""
     start_time = time.time()
     
@@ -180,7 +184,9 @@ async def get_database_health() -> Dict[str, Any]:
         }
 
 @router.get("/performance")
-async def get_performance_metrics() -> Dict[str, Any]:
+async def get_performance_metrics(
+    _user: AuthenticatedUser = Depends(require_admin),
+) -> Dict[str, Any]:
     """Get performance metrics for identifying bottlenecks"""
     try:
         # Measure key operation response times
@@ -218,7 +224,7 @@ async def get_performance_metrics() -> Dict[str, Any]:
         
     except Exception as e:
         logger.error(f"Performance metrics failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to get performance metrics: {str(e)}")
+        raise HTTPException(status_code=500, detail="Performance metrics are temporarily unavailable")
 
 @router.post("/warm-cache")
 async def warm_cache_for_user(
@@ -255,7 +261,7 @@ async def warm_cache_for_user(
         
     except Exception as e:
         logger.error(f"Cache warming failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Cache warming failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Cache warming failed")
 
 @router.post("/invalidate-cache")
 async def invalidate_cache_endpoint(
@@ -317,7 +323,7 @@ async def invalidate_cache_endpoint(
         
     except Exception as e:
         logger.error(f"Cache invalidation failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Cache invalidation failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Cache invalidation failed")
 
 @router.get("/cache-stats")
 async def get_cache_statistics(
@@ -376,7 +382,7 @@ async def get_cache_statistics(
         
     except Exception as e:
         logger.error(f"Failed to get cache stats: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to get cache stats: {str(e)}")
+        raise HTTPException(status_code=500, detail="Cache statistics are temporarily unavailable")
 
 @router.get("/task-status/{task_id}")
 async def get_task_status(
@@ -429,7 +435,7 @@ async def get_task_status(
         raise
     except Exception as e:
         logger.error(f"Failed to get task status: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to get task status: {str(e)}")
+        raise HTTPException(status_code=500, detail="Task status is temporarily unavailable")
 
 @router.post("/cancel-task/{task_id}")
 async def cancel_task(
@@ -468,7 +474,7 @@ async def cancel_task(
         raise
     except Exception as e:
         logger.error(f"Failed to cancel task: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to cancel task: {str(e)}")
+        raise HTTPException(status_code=500, detail="Task cancellation failed")
 
 @router.get("/user-tasks")
 async def get_user_tasks(
@@ -514,7 +520,7 @@ async def get_user_tasks(
         
     except Exception as e:
         logger.error(f"Failed to get user tasks: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to get user tasks: {str(e)}")
+        raise HTTPException(status_code=500, detail="Task lookup is temporarily unavailable")
 
 @router.get("/async-stats")
 async def get_async_processor_stats(
@@ -538,4 +544,4 @@ async def get_async_processor_stats(
         
     except Exception as e:
         logger.error(f"Failed to get async stats: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to get async stats: {str(e)}")
+        raise HTTPException(status_code=500, detail="Async statistics are temporarily unavailable")

@@ -11,6 +11,7 @@ from ...models.auth import AuthenticatedUser
 from ...database import supabase
 from ...core.tenant_context import get_tenant_id as get_claim_tenant
 from ...core.redis_client import redis_client
+from ...core.tenant_access import require_user_in_operator_tenant
 import logging
 import json
 import time
@@ -23,13 +24,6 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/users", tags=["users-lightning"])
-
-# Admin emails
-ADMIN_EMAILS = [
-    "sid@theflexliving.com",
-    "raouf@theflexliving.com",
-    "michael@theflexliving.com",
-]
 
 # Request/Response models
 class UserCreateRequest(BaseModel):
@@ -205,26 +199,6 @@ async def get_users_optimized_query(tenant_id: str) -> List[Dict[str, Any]]:
     """
     start = time.time()
     
-    # Query 1: Get all user data from auth.users directly (using service role)
-    # This is MUCH faster than individual auth.admin.get_user_by_id calls
-    auth_users_query = f"""
-    SELECT 
-        au.id,
-        au.email,
-        au.created_at,
-        au.last_sign_in_at,
-        au.raw_user_meta_data as user_metadata,
-        au.raw_app_meta_data as app_metadata,
-        ut.role,
-        ut.is_owner
-    FROM auth.users au
-    INNER JOIN user_tenants ut ON ut.user_id = au.id::text
-    WHERE ut.tenant_id = '{tenant_id}'
-    AND ut.is_active = true
-    AND (au.raw_user_meta_data->>'deleted' IS NULL OR au.raw_user_meta_data->>'deleted' = 'false')
-    ORDER BY au.created_at DESC
-    """
-    
     try:
         # Execute raw SQL query using service role
         auth_result = supabase.service.postgrest.from_("users").select("*", count="none").execute()
@@ -327,7 +301,6 @@ async def get_auth_users_batch(user_ids: List[str], user_tenant_map: Dict) -> Li
             for user in result.data:
                 tenant_info = user_tenant_map.get(user["id"], {})
                 is_admin = (
-                    user.get("email") in ADMIN_EMAILS or
                     tenant_info.get("role") == "admin" or
                     tenant_info.get("role") == "owner" or
                     tenant_info.get("is_owner", False)
@@ -369,7 +342,6 @@ async def get_auth_users_batch(user_ids: List[str], user_tenant_map: Dict) -> Li
                 
                 tenant_info = user_tenant_map.get(uid, {})
                 is_admin = (
-                    user.email in ADMIN_EMAILS or
                     tenant_info.get("role") == "admin" or
                     tenant_info.get("role") == "owner" or
                     tenant_info.get("is_owner", False)
@@ -495,10 +467,10 @@ async def list_users_lightning(
         )
         
     except Exception as e:
-        logger.error(f"Error in list_users_lightning: {e}", exc_info=True)
+        logger.error("User lookup failed: %s", type(e).__name__)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch users: {str(e)}"
+            detail="User lookup is temporarily unavailable"
         )
 
 
@@ -528,7 +500,7 @@ async def setup_database_optimization(
     Create optimized database functions for lightning-fast user queries.
     This should be run once by an admin to set up the database.
     """
-    if user.email not in ADMIN_EMAILS:
+    if not user.is_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only admins can set up database optimizations"
@@ -766,6 +738,7 @@ async def list_users_brief(
             brief_users = []
             for uid in id_list[:50]:
                 try:
+                    require_user_in_operator_tenant(user, uid)
                     response = supabase.auth.admin.get_user_by_id(uid)
                     if response and response.user:
                         brief_users.append({
@@ -791,7 +764,12 @@ async def create_user(
 ):
     """Create a new user"""
     try:
-        is_admin = create_request.isAdmin or create_request.email in ADMIN_EMAILS
+        is_admin = create_request.isAdmin
+        if is_admin and not user.is_admin:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only tenant admins can create an admin user",
+            )
 
         user_data = {
             "email": create_request.email,
@@ -905,6 +883,8 @@ async def get_user(
 ):
     """Get user details including role and metadata"""
     try:
+        require_user_in_operator_tenant(user, user_id)
+
         # Get user from auth
         response = supabase.auth.admin.get_user_by_id(user_id)
         if not response or not response.user:
@@ -1010,9 +990,15 @@ async def update_user(
 ):
     """Update user details including permissions and cities"""
     try:
+        operator_tid = require_user_in_operator_tenant(user, user_id)
         requested_role = None
         if update_request.app_metadata and isinstance(update_request.app_metadata, dict):
             requested_role = update_request.app_metadata.get("role")
+        if requested_role in ("admin", "owner") and not user.is_admin:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only tenant admins can grant an admin role",
+            )
 
         tenant_rows: List[Dict[str, Any]] = []
         try:
@@ -1026,7 +1012,6 @@ async def update_user(
             logger.warning(f"Unable to fetch tenant rows for {user_id}: {tenant_fetch_error}")
 
         # Change: Scope allowed cities by current operator's tenant when available
-        operator_tid = getattr(user, "tenant_id", None)
         if operator_tid:
             tenant_ids = [operator_tid]
         else:
@@ -1065,8 +1050,12 @@ async def update_user(
         # Update auth user if there are attributes to update
         if attributes:
             try:
-                # Log what we're sending
-                logger.info(f"Updating auth user {user_id} with attributes: {json.dumps(attributes, default=str)}")
+                # Never log attribute values: this mapping can contain a password.
+                logger.info(
+                    "Updating auth user %s fields: %s",
+                    user_id,
+                    sorted(attributes.keys()),
+                )
                 
                 # Try to update the user
                 try:
@@ -1323,9 +1312,11 @@ async def update_user(
 
         return {"message": "User updated successfully"}
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error updating user: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error updating user")
+        raise HTTPException(status_code=500, detail="Error updating user")
 
 
 @router.delete("/{user_id}")
@@ -1333,36 +1324,21 @@ async def delete_user(
     user_id: str,
     user: AuthenticatedUser = Depends(require_permission("users", "delete")),
 ):
-    """Soft delete a user"""
+    """Remove a user's membership from the operator's tenant."""
     try:
-        response = supabase.auth.admin.get_user_by_id(user_id)
-        if not response or not response.user:
-            raise HTTPException(status_code=404, detail="User not found")
-        
-        current_metadata = response.user.user_metadata or {}
-        current_metadata["deleted"] = True
-        current_metadata["deleted_at"] = datetime.now().isoformat()
-        current_metadata["status"] = "inactive"
-        
-        supabase.auth.admin.update_user_by_id(user_id, {
-            "user_metadata": current_metadata
-        })
-        
+        operator_tid = require_user_in_operator_tenant(user, user_id)
+
+        # A user can belong to more than one tenant. Do not globally disable
+        # their identity when a single tenant removes its membership.
         supabase.service.table("user_tenants")\
             .update({"is_active": False})\
             .eq("user_id", user_id)\
+            .eq("tenant_id", operator_tid)\
             .execute()
-        
-        # Clear cache
-        tenant_result = supabase.service.table("user_tenants")\
-            .select("tenant_id")\
-            .eq("user_id", user_id)\
-            .limit(1)\
-            .execute()
-        
-        if tenant_result.data and redis_client.is_connected:
-            cache_key = get_cache_key(tenant_result.data[0]["tenant_id"])
-            await redis_client.delete(cache_key)
+
+        invalidate_user_cache(user_id)
+        if redis_client.is_connected:
+            await redis_client.delete(get_cache_key(operator_tid))
         
         return {"message": "User deleted successfully"}
         
@@ -1370,4 +1346,4 @@ async def delete_user(
         raise
     except Exception as e:
         logger.error(f"Error deleting user: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to delete user")

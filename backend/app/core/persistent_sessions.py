@@ -141,7 +141,7 @@ class PersistentSessionManager:
     ) -> PersistentSession:
         """Create a new persistent session"""
         try:
-            logger.info(f"Creating persistent session for user {user_id}, tenant {tenant_id}")
+            logger.info("Creating persistent session")
             
             if not db:
                 # In a real implementation, you'd use dependency injection
@@ -187,7 +187,7 @@ class PersistentSessionManager:
             if not result.data:
                 raise Exception("Failed to create session in database")
             
-            logger.info(f"Persistent session created successfully: {session_id}")
+            logger.info("Persistent session created successfully")
             
             # Cleanup old sessions for this user
             await PersistentSessionManager.cleanup_user_sessions(user_id)
@@ -195,10 +195,10 @@ class PersistentSessionManager:
             return result.data[0]
             
         except Exception as e:
-            logger.error(f"Error creating persistent session: {str(e)}")
+            logger.error("Persistent session creation failed: %s", type(e).__name__)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to create session: {str(e)}"
+                detail="Session creation is temporarily unavailable"
             )
     
     @staticmethod
@@ -210,7 +210,7 @@ class PersistentSessionManager:
     ) -> Dict[str, Any]:
         """Validate a persistent session"""
         try:
-            logger.info(f"Validating persistent session: {session_id}")
+            logger.debug("Validating persistent session")
             
             # Get session from database
             result = supabase.service.table('persistent_sessions').select(
@@ -218,25 +218,25 @@ class PersistentSessionManager:
             ).eq('session_id', session_id).eq('is_active', True).execute()
             
             if not result.data:
-                logger.warning(f"Session not found: {session_id}")
+                logger.warning("Persistent session not found")
                 return {'valid': False, 'reason': 'session_not_found'}
             
             session = result.data[0]
             
             # Validate session ownership
             if session['user_id'] != user_id:
-                logger.warning(f"Session user mismatch: {session_id}")
+                logger.warning("Persistent session user mismatch")
                 return {'valid': False, 'reason': 'user_mismatch'}
             
             # Validate device
             if session['device_id'] != device_id:
-                logger.warning(f"Session device mismatch: {session_id}")
+                logger.warning("Persistent session device mismatch")
                 return {'valid': False, 'reason': 'device_mismatch'}
             
             # Check expiration
             expires_at = datetime.fromisoformat(session['expires_at'].replace('Z', '+00:00'))
             if datetime.utcnow() > expires_at:
-                logger.warning(f"Session expired: {session_id}")
+                logger.warning("Persistent session expired")
                 # Mark session as inactive
                 await PersistentSessionManager.deactivate_session(session_id)
                 return {'valid': False, 'reason': 'session_expired'}
@@ -248,20 +248,20 @@ class PersistentSessionManager:
                     stored_token_data = json.loads(session['access_token_hash'])
                     decrypted_token = PersistentSessionManager.decrypt_token(stored_token_data)
                     if decrypted_token != access_token:
-                        logger.warning(f"Session token mismatch: {session_id}")
+                        logger.warning("Persistent session token mismatch")
                         return {'valid': False, 'reason': 'token_mismatch'}
                 except (json.JSONDecodeError, KeyError, Exception) as e:
                     # Fallback to hash comparison for backward compatibility with old sessions
-                    logger.debug(f"Falling back to hash comparison for session {session_id}: {e}")
+                    logger.debug("Session token comparison fallback: %s", type(e).__name__)
                     token_hash = PersistentSessionManager.hash_token(access_token)
                     if session['access_token_hash'] != token_hash:
-                        logger.warning(f"Session token mismatch (hash): {session_id}")
+                        logger.warning("Persistent session token mismatch")
                         return {'valid': False, 'reason': 'token_mismatch'}
             
             # Update last activity
             await PersistentSessionManager.update_session_activity(session_id)
             
-            logger.info(f"Session validated successfully: {session_id}")
+            logger.debug("Persistent session validated successfully")
             return {
                 'valid': True,
                 'session': session,
@@ -270,8 +270,8 @@ class PersistentSessionManager:
             }
             
         except Exception as e:
-            logger.error(f"Error validating session {session_id}: {str(e)}")
-            return {'valid': False, 'reason': 'validation_error', 'error': str(e)}
+            logger.error("Persistent session validation failed: %s", type(e).__name__)
+            return {'valid': False, 'reason': 'validation_error'}
     
     @staticmethod
     async def update_session_activity(session_id: str) -> bool:
@@ -284,7 +284,7 @@ class PersistentSessionManager:
             return len(result.data) > 0
             
         except Exception as e:
-            logger.error(f"Error updating session activity {session_id}: {str(e)}")
+            logger.error("Persistent session activity update failed: %s", type(e).__name__)
             return False
     
     @staticmethod
@@ -311,11 +311,11 @@ class PersistentSessionManager:
                 update_data
             ).eq('session_id', session_id).eq('is_active', True).execute()
             
-            logger.info(f"Session tokens updated: {session_id}")
+            logger.info("Persistent session tokens updated")
             return len(result.data) > 0
             
         except Exception as e:
-            logger.error(f"Error updating session tokens {session_id}: {str(e)}")
+            logger.error("Persistent session token update failed: %s", type(e).__name__)
             return False
     
     @staticmethod
@@ -327,11 +327,11 @@ class PersistentSessionManager:
                 'last_activity': datetime.utcnow().isoformat()
             }).eq('session_id', session_id).execute()
             
-            logger.info(f"Session deactivated: {session_id}")
+            logger.info("Persistent session deactivated")
             return len(result.data) > 0
             
         except Exception as e:
-            logger.error(f"Error deactivating session {session_id}: {str(e)}")
+            logger.error("Persistent session deactivation failed: %s", type(e).__name__)
             return False
     
     @staticmethod
@@ -349,11 +349,11 @@ class PersistentSessionManager:
             result = query.execute()
             
             deactivated_count = len(result.data)
-            logger.info(f"Deactivated {deactivated_count} sessions for user {user_id}")
+            logger.info("Deactivated %d persistent sessions", deactivated_count)
             return deactivated_count
             
         except Exception as e:
-            logger.error(f"Error deactivating user sessions {user_id}: {str(e)}")
+            logger.error("Persistent session bulk deactivation failed: %s", type(e).__name__)
             return 0
     
     @staticmethod
@@ -378,13 +378,13 @@ class PersistentSessionManager:
                 for session_id in session_ids_to_deactivate:
                     await PersistentSessionManager.deactivate_session(session_id)
                 
-                logger.info(f"Cleaned up {len(session_ids_to_deactivate)} excess sessions for user {user_id}")
+                logger.info("Cleaned up %d excess persistent sessions", len(session_ids_to_deactivate))
                 return len(session_ids_to_deactivate)
             
             return 0
             
         except Exception as e:
-            logger.error(f"Error cleaning up user sessions {user_id}: {str(e)}")
+            logger.error("Persistent session cleanup failed: %s", type(e).__name__)
             return 0
     
     @staticmethod
@@ -413,7 +413,7 @@ class PersistentSessionManager:
             return 0
             
         except Exception as e:
-            logger.error(f"Error cleaning up expired sessions: {str(e)}")
+            logger.error("Expired session cleanup failed: %s", type(e).__name__)
             return 0
     
     @staticmethod
@@ -432,7 +432,7 @@ class PersistentSessionManager:
             return result.data
             
         except Exception as e:
-            logger.error(f"Error getting user sessions {user_id}: {str(e)}")
+            logger.error("Persistent session lookup failed: %s", type(e).__name__)
             return []
 
 # Session validation endpoint dependencies
@@ -465,21 +465,12 @@ async def get_or_create_persistent_session(
         )
         
         if validation_result['valid']:
-            logger.info(f"Using existing persistent session: {session_id}")
+            logger.info("Using existing persistent session")
             return validation_result['session']
-    
-    # Create new session
-    logger.info(f"Creating new persistent session for user {user.id}")
-    
-    # For this implementation, we'll create a basic session
-    # In a real implementation, you'd get the actual access and refresh tokens
-    access_token = "dummy_access_token"  # This would be the actual JWT token
-    
-    return await PersistentSessionManager.create_session(
-        user_id=user.id,
-        tenant_id=user.tenant_id or '',
-        device_id=device_id or f"device_{user.id}_{datetime.utcnow().timestamp()}",
-        access_token=access_token,
-        user_agent=user_agent,
-        ip_address=ip_address
+
+    # This legacy dependency does not receive the caller's bearer token, so it
+    # must not create a session around a fabricated credential.
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="Persistent sessions are temporarily unavailable",
     )

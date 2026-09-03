@@ -4,7 +4,7 @@ import asyncio
 if sys.platform == 'win32':
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import Depends, FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -32,6 +32,8 @@ from .api.v1 import (
 )
 
 from .monitoring.middleware import PerformanceMonitoringMiddleware
+from .core.auth import require_admin
+from .models.auth import AuthenticatedUser
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -144,6 +146,20 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    response.headers.setdefault(
+        "Permissions-Policy", "camera=(), microphone=(), geolocation=()"
+    )
+    if request.url.path.startswith("/api/v1/auth"):
+        response.headers.setdefault("Cache-Control", "no-store")
+    return response
+
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
@@ -206,12 +222,9 @@ async def health_check():
         from .database import supabase
 
         db_health = await supabase.health_check()
-        return {"status": "healthy", "database": db_health}
-    except Exception as e:
-        return {
-            "status": "degraded",
-            "database": {"status": "unhealthy", "error": str(e)},
-        }
+        return {"status": "healthy" if db_health.get("status") == "healthy" else "degraded"}
+    except Exception:
+        return {"status": "degraded"}
 
 
 @app.get("/up")
@@ -221,7 +234,7 @@ async def up_check():
 
 # Database connection pool monitoring endpoints
 @app.get("/pool-status")
-async def pool_status():
+async def pool_status(_user: AuthenticatedUser = Depends(require_admin)):
     """Get detailed connection pool status"""
     try:
         from .database import supabase
@@ -233,7 +246,7 @@ async def pool_status():
 
 
 @app.get("/database-health")
-async def database_health():
+async def database_health(_user: AuthenticatedUser = Depends(require_admin)):
     """Detailed database health check"""
     try:
         from .database import supabase
@@ -251,12 +264,9 @@ async def api_health_check():
         from .database import supabase
 
         db_health = await supabase.health_check()
-        return {"status": "healthy", "database": db_health}
-    except Exception as e:
-        return {
-            "status": "degraded",
-            "database": {"status": "unhealthy", "error": str(e)},
-        }
+        return {"status": "healthy" if db_health.get("status") == "healthy" else "degraded"}
+    except Exception:
+        return {"status": "degraded"}
 
 
 @app.get("/api/v1/up")
@@ -265,7 +275,7 @@ async def api_up_check():
 
 
 @app.get("/api/v1/pool-status")
-async def api_pool_status():
+async def api_pool_status(_user: AuthenticatedUser = Depends(require_admin)):
     """Get detailed connection pool status via API"""
     try:
         from .database import supabase
@@ -277,7 +287,7 @@ async def api_pool_status():
 
 
 @app.get("/api/v1/database-health")
-async def api_database_health():
+async def api_database_health(_user: AuthenticatedUser = Depends(require_admin)):
     """Detailed database health check via API"""
     try:
         from .database import supabase
@@ -290,7 +300,7 @@ async def api_database_health():
 
 # Circuit breaker management endpoints
 @app.post("/api/v1/circuit-breaker/reset")
-async def reset_circuit_breaker():
+async def reset_circuit_breaker(_user: AuthenticatedUser = Depends(require_admin)):
     """Reset circuit breakers to allow operations to resume"""
     try:
         from .core.supabase_connection_pool import supabase_pool
@@ -321,7 +331,7 @@ async def reset_circuit_breaker():
 
 
 @app.get("/api/v1/circuit-breaker/status")
-async def circuit_breaker_status():
+async def circuit_breaker_status(_user: AuthenticatedUser = Depends(require_admin)):
     """Get current circuit breaker status"""
     try:
         from .core.supabase_connection_pool import supabase_pool
@@ -364,7 +374,10 @@ async def circuit_breaker_status():
 
 
 @app.post("/api/v1/circuit-breaker/configure")
-async def configure_circuit_breaker(request: Request):
+async def configure_circuit_breaker(
+    request: Request,
+    _user: AuthenticatedUser = Depends(require_admin),
+):
     """Configure circuit breaker thresholds and timeouts"""
     try:
         body = await request.json()
@@ -403,7 +416,7 @@ async def configure_circuit_breaker(request: Request):
 
 # Fallback service management endpoints
 @app.get("/api/v1/fallback/status")
-async def fallback_status():
+async def fallback_status(_user: AuthenticatedUser = Depends(require_admin)):
     """Get fallback service status and cache information"""
     try:
         from .core.circuit_breaker_fallback import fallback_service
@@ -415,7 +428,7 @@ async def fallback_status():
 
 
 @app.post("/api/v1/fallback/clear-cache")
-async def clear_fallback_cache():
+async def clear_fallback_cache(_user: AuthenticatedUser = Depends(require_admin)):
     """Clear the fallback service cache"""
     try:
         from .core.circuit_breaker_fallback import fallback_service
@@ -475,4 +488,4 @@ if static_dir:
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="127.0.0.1", port=8000)

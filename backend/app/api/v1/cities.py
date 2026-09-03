@@ -1,21 +1,22 @@
 from fastapi import APIRouter, Depends, HTTPException
 from typing import List, Dict, Any
 from ...database import supabase
-from ...core.auth import authenticate_request, ADMIN_EMAILS
+from ...core.auth import authenticate_request
 
 router = APIRouter()
 
 @router.get("/cities")
-async def get_available_cities():
+async def get_available_cities(current_user = Depends(authenticate_request)):
     """
     Get all available cities from the properties table.
     Returns cities that have at least one active property.
-    This is a public endpoint that doesn't require authentication.
+    Results are restricted to the authenticated tenant.
     """
     try:
         # Query to get distinct cities from properties table where status is active
         result = supabase.table('properties') \
             .select('city') \
+            .eq('tenant_id', current_user.tenant_id) \
             .neq('city', '') \
             .not_.is_('city', 'null') \
             .eq('status', 'active') \
@@ -66,6 +67,7 @@ async def get_user_accessible_cities(
             # Admin gets all available cities
             result = supabase.table('properties') \
                 .select('city') \
+                .eq('tenant_id', current_user.tenant_id) \
                 .neq('city', '') \
                 .not_.is_('city', 'null') \
                 .eq('status', 'active') \
@@ -93,6 +95,7 @@ async def get_user_accessible_cities(
                 # Get properties in accessible cities
                 result = supabase.table('properties') \
                     .select('city') \
+                    .eq('tenant_id', current_user.tenant_id) \
                     .neq('city', '') \
                     .not_.is_('city', 'null') \
                     .eq('status', 'active') \
