@@ -21,6 +21,17 @@ def _month_bounds(month: int, year: int):
     end = datetime(year + 1, 1, 1) if month == 12 else datetime(year, month + 1, 1)
     return start, end
 
+async def property_belongs_to_tenant(property_id: str, tenant_id: str) -> bool:
+    """True if the property exists under this tenant. Used to stop a tenant
+    requesting another tenant's property (IDs are only unique per tenant)."""
+    pool = await _get_pool()
+    async with pool.get_session() as session:
+        result = await session.execute(
+            text("SELECT 1 FROM properties WHERE id = :property_id AND tenant_id = :tenant_id"),
+            {"property_id": property_id, "tenant_id": tenant_id},
+        )
+        return result.first() is not None
+
 async def calculate_monthly_revenue(property_id: str, tenant_id: str, month: int, year: int) -> Decimal:
     """
     Calculates revenue for a specific month.
