@@ -11,7 +11,6 @@
 
 import { supabase } from './supabase';
 import { sessionManager } from '../utils/sessionManager';
-import { withRetry, handleApiError, classifyError } from '../utils/apiErrorHandler';
 
 // Get backend URL with fallback for misconfigured production environments
 const getBackendUrl = () => {
@@ -1449,25 +1448,34 @@ export class SecureAPIClient {
   }
 
   // ============= DASHBOARD API =============
+  async getDashboardProperties() {
+    return this.request<{
+      items: Array<{ id: string; name: string }>;
+      total: number;
+    }>('/api/v1/dashboard/properties');
+  }
+
   /**
    * Get dashboard summary with optional simulation header
    */
-  async getDashboardSummary(propertyId: string, options?: { simulatedTenant?: string, timestamp?: number }) {
-    const queryParams = new URLSearchParams({ property_id: propertyId });
-    if (options?.timestamp) {
-      queryParams.append('_t', options.timestamp.toString());
-    }
+async getDashboardSummary(
+  propertyId: string,
+  month: number,
+  year: number
+) {
+  const queryParams = new URLSearchParams({
+    property_id: propertyId,
+    month: String(month),
+    year: String(year),
+  });
 
-    const requestOptions: RequestInit = {};
-    if (options?.simulatedTenant) {
-      requestOptions.headers = {
-        'X-Simulated-Tenant': options.simulatedTenant
-      };
-    }
-
-    return this.request<any>(`/api/v1/dashboard/summary?${queryParams}`, requestOptions);
-  }
-
+  return this.request<{
+    property_id: string;
+    tenant_id: string;
+    total_revenue: string;
+    currency: string;
+  }>(`/api/v1/dashboard/summary?${queryParams}`);
+}
   async uploadCompanyLogo(logo_url: string) {
     return this.request<any>('/api/v1/company-settings/logo', {
       method: 'POST',
