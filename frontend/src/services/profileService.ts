@@ -11,14 +11,30 @@ import { getApiBase } from '../lib/apiBase';
 class ProfileService {
   private async getAuthHeaders() {
     const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.access_token) {
+    let token = session?.access_token;
+    
+    if (!token) {
+      const stored = localStorage.getItem('base360-auth-token') || localStorage.getItem('access_token');
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored);
+          token = parsed.access_token || parsed;
+        } catch {
+          token = stored;
+        }
+      }
+    }
+
+    if (!token) {
       throw new Error('No active session');
     }
+
     return {
-      'Authorization': `Bearer ${session.access_token}`,
+      'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json'
     };
   }
+
 
   async getProfile(): Promise<ProfileResponse> {
     const response = await fetch(`${getApiBase()}/api/v1/profile`, {
@@ -86,7 +102,7 @@ class ProfileService {
 
       const response = await fetch(`${getApiBase()}/api/v1/profile/avatar`, {
         method: 'POST',
-        headers: { Authorization: (headers as any)['Authorization'] as string },
+        headers: { Authorization: (headers)['Authorization'] as string },
         body: formData,
       });
 

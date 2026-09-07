@@ -647,14 +647,18 @@ class SessionManager {
       // Try JWT claims first
       if (session.access_token && session.access_token.includes('.') && session.access_token.split('.').length === 3) {
         const payload = JSON.parse(atob(session.access_token.split('.')[1]));
-        tenant_id = payload.tenant_id || '';
+        tenant_id = payload.app_metadata?.tenant_id || payload.user_metadata?.tenant_id || payload.tenant_id || '';
       } else if (session.access_token === "mock-token-123") {
         // Handle static local token.
         tenant_id = "tenant-a";
       }
+      // Fallback to metadata if not found in JWT
+      if (!tenant_id) {
+        tenant_id = (user as any).app_metadata?.tenant_id || (user as any).user_metadata?.tenant_id || '';
+      }
     } catch (error) {
       // Fallback to metadata
-      tenant_id = user.app_metadata?.tenant_id || user.user_metadata?.tenant_id || '';
+      tenant_id = (user as any).app_metadata?.tenant_id || (user as any).user_metadata?.tenant_id || '';
     }
 
     return {

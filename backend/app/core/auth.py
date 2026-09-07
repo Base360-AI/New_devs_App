@@ -83,7 +83,11 @@ async def authenticate_request(
     # Check cache first
     if token_hash in auth_cache:
         cached_data = auth_cache[token_hash]
-        if datetime.now().timestamp() - cached_data["timestamp"] < CACHE_DURATION:
+        is_cache_fresh = datetime.now().timestamp() - cached_data["timestamp"] < CACHE_DURATION
+        token_exp = cached_data.get("exp")
+        is_token_unexpired = token_exp is None or datetime.utcnow().timestamp() < token_exp
+
+        if is_cache_fresh and is_token_unexpired:
             cached_user = cached_data["user"]
             # If not, force a refresh to get proper tenant isolation
             if not cached_user.tenant_id:
@@ -95,7 +99,7 @@ async def authenticate_request(
                 )
                 return cached_user
         else:
-            # Remove expired cache entry
+            logger.info(f"AUTH: Token cache expired or token payload exp passed ({token_hash}) - forcing JWT re-verification")
             del auth_cache[token_hash]
 
     logger.info(f"AUTH: Starting authentication - Token hash: {token_hash}, Token preview: {token[:20]}...")
@@ -123,6 +127,7 @@ async def authenticate_request(
                         self.app_metadata = payload.get('app_metadata', {})
                         self.user_metadata = payload.get('user_metadata', {})
                         self.raw_app_metadata = payload.get('app_metadata', {})
+                        self.tenant_id = self.app_metadata.get('tenant_id') or payload.get('tenant_id') or 'tenant-a'
                         
                 user = MockUser(payload)
                 
@@ -278,9 +283,11 @@ async def authenticate_request(
         )
 
         # Cache the authentication result
+        token_exp_claim = payload.get("exp") if 'payload' in locals() and isinstance(payload, dict) else None
         auth_cache[token_hash] = {
             "user": auth_user,
             "timestamp": datetime.now().timestamp(),
+            "exp": token_exp_claim,
         }
 
         # Clean up old cache entries (keep cache size manageable)

@@ -110,9 +110,11 @@ export class SessionRecovery {
       // If no session found, check localStorage directly as a fallback
       console.log('[SessionRecovery] No session from getSession, checking localStorage directly...');
       
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-      const storageKey = `sb-${supabaseUrl.split('//')[1].split('.')[0]}-auth-token`;
-      const storedData = localStorage.getItem(storageKey);
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
+      const storageKey = (supabaseUrl && supabaseUrl.includes('//')) 
+        ? `sb-${supabaseUrl.split('//')[1].split('.')[0]}-auth-token` 
+        : 'base360-auth-token';
+      const storedData = localStorage.getItem(storageKey) || localStorage.getItem('access_token') || localStorage.getItem('base360-auth-token');
       
       if (storedData) {
         try {

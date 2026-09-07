@@ -47,13 +47,26 @@ export function decodeJWTPayload(token: string): JWTClaims | null {
  * Extract tenant_id from Supabase session JWT claims
  */
 export function extractTenantFromSession(session: any): string | null {
-  if (!session?.access_token) {
+  if (!session) {
+    return null;
+  }
+
+  // Check direct session / user properties
+  if (session?.user?.tenant_id) {
+    return session.user.tenant_id;
+  }
+  if (session?.tenant_id) {
+    return session.tenant_id;
+  }
+
+  const token = typeof session === 'string' ? session : session?.access_token;
+  if (!token || typeof token !== 'string') {
     return null;
   }
 
   try {
-    const claims = decodeJWTPayload(session.access_token);
-    const tenantId = claims?.tenant_id;
+    const claims = decodeJWTPayload(token);
+    const tenantId = claims?.app_metadata?.tenant_id || claims?.tenant_id || claims?.user_metadata?.tenant_id;
     
     if (tenantId) {
       if (import.meta.env.DEV) {

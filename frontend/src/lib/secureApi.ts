@@ -11,8 +11,6 @@
 
 import { supabase } from './supabase';
 import { sessionManager } from '../utils/sessionManager';
-import { withRetry, handleApiError, classifyError } from '../utils/apiErrorHandler';
-
 // Get backend URL with fallback for misconfigured production environments
 const getBackendUrl = () => {
   // For production/staging (non-localhost), use relative URLs to avoid CORS
@@ -186,7 +184,7 @@ export class SecureAPIClient {
         // Check if it's a valid JWT
         else if (token.includes('.') && token.split('.').length === 3) {
           const payload = JSON.parse(atob(token.split('.')[1]));
-          extractedTenantId = payload.user_metadata?.tenant_id || payload.tenant_id;
+          extractedTenantId = payload.app_metadata?.tenant_id || payload.user_metadata?.tenant_id || payload.tenant_id;
         }
 
         if (extractedTenantId) {
@@ -243,9 +241,10 @@ export class SecureAPIClient {
    * Validate tenant ID format for security
    */
   private isValidTenantId(tenantId: string): boolean {
-    // Check for UUID format (basic validation)
+    // Accept UUID format or slug format (e.g. 'tenant-a', 'tenant-b')
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    return typeof tenantId === 'string' && tenantId.length > 0 && uuidRegex.test(tenantId);
+    const slugRegex = /^[a-z0-9][a-z0-9_-]{1,62}$/i;
+    return typeof tenantId === 'string' && tenantId.length > 0 && (uuidRegex.test(tenantId) || slugRegex.test(tenantId));
   }
 
   /**
@@ -473,7 +472,7 @@ export class SecureAPIClient {
         if (typeof localStorage === 'undefined') return null;
         for (let i = 0; i < localStorage.length; i++) {
           const key = localStorage.key(i) || '';
-          if (key.startsWith('sb-') && key.endsWith('-auth-token')) {
+          if (key === 'base360-auth-token' || (key.startsWith('sb-') && key.endsWith('-auth-token'))) {
             const raw = localStorage.getItem(key);
             if (!raw) continue;
             const parsed = JSON.parse(raw);
@@ -638,8 +637,8 @@ export class SecureAPIClient {
         const response = await fetch(url, {
           ...options,
           headers: {
-            ...headers,
-            ...options.headers
+            ...(options.headers || {}),
+            ...headers
           }
         });
 
@@ -674,16 +673,24 @@ export class SecureAPIClient {
           if (response.status === 401) {
             console.log('[SecureAPI] Got 401, attempting to refresh session...');
 
+            // Capture old token to detect stale refresh
+            const oldToken = this.cachedToken;
+
             // Import sessionValidator dynamically to avoid circular dependency
             const { sessionValidator } = await import('../utils/sessionValidator');
 
-            // Clear cached token
+            // Clear cached token to force re-fetch
             this.cachedToken = null;
 
             // Try to validate/refresh the session
             const refreshedSession = await sessionValidator.validateSession();
 
             if (refreshedSession?.access_token) {
+              // Detect if refresh returned same token (backend bug or still expired)
+              if (oldToken && refreshedSession.access_token === oldToken) {
+                console.warn('[SecureAPI] Refresh returned same token – not retrying, will fail');
+                throw new Error('Authentication failed - please login again');
+              }
               console.log('[SecureAPI] Session refreshed, will retry with new token');
               this.cachedToken = refreshedSession.access_token;
 
@@ -1450,22 +1457,24 @@ export class SecureAPIClient {
 
   // ============= DASHBOARD API =============
   /**
-   * Get dashboard summary with optional simulation header
+   * Get dashboard summary with optional month and year filtering
    */
-  async getDashboardSummary(propertyId: string, options?: { simulatedTenant?: string, timestamp?: number }) {
+  async getDashboardSummary(propertyId: string, options?: { month?: number, year?: number, simulatedTenant?: string, timestamp?: number }) {
     const queryParams = new URLSearchParams({ property_id: propertyId });
-    if (options?.timestamp) {
-      queryParams.append('_t', options.timestamp.toString());
+    if (options?.month !== undefined && options?.year !== undefined) {
+      queryParams.append('month', options.month.toString());
+      queryParams.append('year', options.year.toString());
     }
 
-    const requestOptions: RequestInit = {};
-    if (options?.simulatedTenant) {
-      requestOptions.headers = {
-        'X-Simulated-Tenant': options.simulatedTenant
-      };
-    }
+    return this.request<any>(`/api/v1/dashboard/summary?${queryParams}`);
+  }
 
-    return this.request<any>(`/api/v1/dashboard/summary?${queryParams}`, requestOptions);
+  /**
+   * Fetch properties belonging to caller's tenant
+   */
+  async getDashboardProperties() {
+    const res = await this.request<any>('/api/v1/dashboard/properties');
+    return Array.isArray(res) ? res : [];
   }
 
   async uploadCompanyLogo(logo_url: string) {
@@ -2030,6 +2039,8 @@ export class SecureAPIClient {
     const queryParams = new URLSearchParams(params as any);
     return this.request<any>(`/api/v1/properties/in-radius?${queryParams}`);
   }
+
+
 
   /**
    * Check if property exists with specific hostaway_id

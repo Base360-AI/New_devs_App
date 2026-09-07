@@ -145,29 +145,10 @@ class LocalAuthClient {
   }
 
   async getSession(): Promise<{ data: { session: AuthSession | null } }> {
-    // Check if current session is still valid
-    if (this.session?.access_token) {
-      try {
-        // Verify token is still valid by calling a protected endpoint
-        const response = await fetch(`${this.getApiUrl()}/api/v1/auth/me`, {
-          headers: {
-            'Authorization': `Bearer ${this.session.access_token}`,
-          },
-        });
-
-        if (response.ok) {
-          return { data: { session: this.session } };
-        } else {
-          // Session invalid, clear it
-          this.saveSession(null);
-        }
-      } catch (error) {
-        console.warn('[LocalAuth] Session validation failed:', error);
-        this.saveSession(null);
-      }
+    if (!this.session?.access_token) {
+      this.loadSession();
     }
-
-    return { data: { session: null } };
+    return { data: { session: this.session } };
   }
 
   async getUser(token?: string): Promise<{ user: AuthUser | null }> {
@@ -205,6 +186,93 @@ class LocalAuthClient {
     }
   }
 
+  private refreshPromise: Promise<AuthResponse> | null = null;
+
+  async refreshSession(): Promise<AuthResponse> {
+    if (!this.session?.access_token) {
+      this.loadSession();
+    }
+
+    // Deduplicate concurrent refreshes – backend exp (60s) drives expiry
+    if (this.refreshPromise) {
+      console.log('[LocalAuth] Session refresh already in-flight, reusing promise');
+      return this.refreshPromise;
+    }
+
+    this.refreshPromise = (async (): Promise<AuthResponse> => {
+      try {
+        if (!this.session?.access_token) {
+          return {
+            user: null,
+            session: null,
+            error: new Error('No session to refresh'),
+          };
+        }
+
+        const response = await fetch(`${this.getApiUrl()}/api/v1/auth/refresh-session`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${this.session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            session_id: `session-${this.session.user.id}`,
+            user_id: this.session.user.id,
+            device_id: 'default-device',
+          }),
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          const newAccessToken = data.access_token || this.session.access_token;
+          const updatedSession: AuthSession = {
+            ...this.session,
+            access_token: newAccessToken,
+          };
+
+          this.saveSession(updatedSession);
+          console.log('✅ [LocalAuth] Session refreshed successfully');
+
+          return {
+            user: updatedSession.user,
+            session: updatedSession,
+            error: null,
+          };
+        } else if (response.status === 401) {
+          // Explicit 401 Unauthorized -> Token revoked or invalid -> Log out user
+          console.warn('[LocalAuth] Token explicitly revoked by server (401), logging out');
+          this.saveSession(null);
+          return {
+            user: null,
+            session: null,
+            error: new Error('Session expired'),
+          };
+        } else {
+          // 500 or temporary server error -> Preserve existing session
+          console.warn(`[LocalAuth] Server error ${response.status} during refresh, preserving session`);
+          return {
+            user: this.session.user,
+            session: this.session,
+            error: null,
+          };
+        }
+      } catch (error: any) {
+        // Network error / offline -> Preserve existing session
+        console.warn('[LocalAuth] Network glitch during refreshSession, preserving session:', error);
+        return {
+          user: this.session?.user || null,
+          session: this.session,
+          error,
+        };
+      }
+    })().finally(() => {
+      this.refreshPromise = null;
+    });
+
+    return this.refreshPromise;
+  }
+
+
   // Mock auth state change handler for compatibility
   onAuthStateChange(callback: (event: string, session: AuthSession | null) => void) {
     // Register subscriber
@@ -239,6 +307,7 @@ class LocalAuthClient {
       getUser: this.getUser.bind(this),
       setSession: this.setSession.bind(this),
       onAuthStateChange: this.onAuthStateChange.bind(this),
+      refreshSession: this.refreshSession.bind(this)
     };
   }
 }

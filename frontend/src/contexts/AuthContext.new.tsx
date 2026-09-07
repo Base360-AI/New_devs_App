@@ -126,12 +126,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (session) {
-        const enrichedUser = enrichUserWithTenant(session);
+        const enrichedUser = enrichUserWithTenant(session as Session);
         setUser(enrichedUser);
         setIsAuthenticated(true);
       } else {
-        setUser(null);
-        setIsAuthenticated(false);
+       const {session,error} = await supabase.auth.refreshSession();
+       if (error) {
+         console.error('Error refreshing session:', error);
+         setUser(null);
+         setIsAuthenticated(false);
+       }else{
+        const enrichedUser = enrichUserWithTenant(session as Session);
+        setUser(enrichedUser);
+        setIsAuthenticated(true);
+       }
       }
     } catch (error) {
       console.error('Error refreshing session:', error);
@@ -204,7 +212,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     window.addEventListener('session-expired', handleSessionExpired);
 
     // Set up auth state change listener
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       console.log('🔍 [AuthContext] Auth state changed EVENT:', event);
       console.log('🔍 [AuthContext] Session present:', !!session);
 
@@ -218,6 +226,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           // Store session for recovery
           authOptimizer.storeSession(session);
         } else {
+          // Check if local auth session exists in localStorage before declaring logged out
+          const storedLocalSession = localStorage.getItem('base360-auth-token') || localStorage.getItem('access_token');
+          if (storedLocalSession && !(window as any).__isLoggingOut) {
+            console.log('🔍 [AuthContext] Supabase session is NULL but local auth session exists -> Recovering...');
+            const recovered = await sessionRecovery.tryRecover();
+            if (recovered) {
+              const enrichedUser = enrichUserFallback(recovered.user);
+              setUser(enrichedUser);
+              setIsAuthenticated(true);
+              setIsLoading(false);
+              return;
+            }
+          }
+
           console.log('🔍 [AuthContext] Session is NULL -> Logging out');
           setUser(null);
           setIsAuthenticated(false);
@@ -238,20 +260,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signIn = async (email: string, password: string) => {
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
+      const {error,session}= await supabase.auth.signInWithPassword({
         email,
         password,
       });
-
+     
       if (error) {
         return { error };
       }
 
-      if (data.session) {
-        const enrichedUser = enrichUserWithTenant(data.session);
+      if (session) {
+        const enrichedUser = enrichUserWithTenant(session);
         setUser(enrichedUser);
         setIsAuthenticated(true);
-        authOptimizer.storeSession(data.session);
+        authOptimizer.storeSession(session);
 
         // Restart session persistence manager after successful login
         sessionPersistenceManager.start();

@@ -51,7 +51,7 @@ async def login(request: LoginRequest):
                 "user_metadata": {"name": "Sunset Properties Manager"},
                 "aud": "authenticated",
                 "created_at": datetime.utcnow().isoformat(),
-                "exp": datetime.utcnow() + timedelta(hours=24)
+                "exp": datetime.utcnow() + settings.access_token_expire_timedelta
             }
             
             token = jwt.encode(user_data, settings.secret_key, algorithm="HS256")
@@ -81,7 +81,7 @@ async def login(request: LoginRequest):
                 "user_metadata": {"name": "Ocean Rentals Manager"},
                 "aud": "authenticated",
                 "created_at": datetime.utcnow().isoformat(),
-                "exp": datetime.utcnow() + timedelta(hours=24)
+                "exp": datetime.utcnow() + settings.access_token_expire_timedelta
             }
             
             token = jwt.encode(user_data, settings.secret_key, algorithm="HS256")
@@ -152,7 +152,7 @@ async def login(request: LoginRequest):
                 "email": user.email,
                 "is_admin": is_admin,
                 "tenant_id": tenant_id,
-                "exp": datetime.utcnow() + timedelta(hours=24),
+                "exp": datetime.utcnow() + settings.access_token_expire_timedelta,
                 "aud": "authenticated"
             }
             

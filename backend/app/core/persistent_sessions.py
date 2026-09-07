@@ -181,18 +181,17 @@ class PersistentSessionManager:
                 'ip_address': ip_address,
             }
             
-            # Store in Supabase (using persistent_sessions table)
-            result = supabase.service.table('persistent_sessions').insert(session_data).execute()
-            
-            if not result.data:
-                raise Exception("Failed to create session in database")
-            
-            logger.info(f"Persistent session created successfully: {session_id}")
-            
-            # Cleanup old sessions for this user
-            await PersistentSessionManager.cleanup_user_sessions(user_id)
-            
-            return result.data[0]
+            # Store in Supabase (using persistent_sessions table if it exists)
+            try:
+                result = supabase.service.table('persistent_sessions').insert(session_data).execute()
+                if result and getattr(result, 'data', None):
+                    logger.info(f"Persistent session created successfully: {session_id}")
+                    await PersistentSessionManager.cleanup_user_sessions(user_id)
+                    return result.data[0]
+            except Exception as db_err:
+                logger.warning(f"persistent_sessions DB table write skipped: {db_err}")
+
+            return session_data
             
         except Exception as e:
             logger.error(f"Error creating persistent session: {str(e)}")

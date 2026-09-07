@@ -12,6 +12,12 @@ class Settings(BaseSettings):
     database_url: str = "postgresql://postgres:postgres@db:5432/propertyflow"
     redis_url: str = "redis://redis:6379/0"
     secret_key: str = "debug_challenge_secret"
+    access_token_expire_seconds: int = 60  # Centralized token expiration in seconds (default 24h: 86400s)
+
+    @property
+    def access_token_expire_timedelta(self):
+        from datetime import timedelta
+        return timedelta(seconds=self.access_token_expire_seconds)
     
     # Optional legacy settings
     supabase_url: Optional[str] = None

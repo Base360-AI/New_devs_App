@@ -90,7 +90,7 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting up...")
 
-    # Initialize Supabase connection pool
+    # Supabase pool is clean – if it fails, fallback to direct Postgres in main (keeps pools decoupled)
     try:
         from .core.supabase_connection_pool import supabase_pool
 
@@ -98,7 +98,12 @@ async def lifespan(app: FastAPI):
         logger.info("✅ Supabase connection pool initialized")
     except Exception as e:
         logger.error(f"❌ Supabase connection pool initialization failed: {e}")
-        # Continue startup - fallback to direct connections
+        try:
+            from .core.database_pool import db_pool
+            await db_pool.initialize()
+            logger.info("✅ Fallback Postgres pool initialized")
+        except Exception as fe:
+            logger.error(f"❌ Fallback DB pool also failed: {fe}")
 
     # Initialize Redis connection with timeout
     try:
