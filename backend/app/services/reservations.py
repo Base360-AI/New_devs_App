@@ -1,18 +1,35 @@
 from datetime import datetime
 from decimal import Decimal
 from typing import Dict, Any, List
+from zoneinfo import ZoneInfo
 
-async def calculate_monthly_revenue(property_id: str, month: int, year: int, db_session=None) -> Decimal:
+async def calculate_monthly_revenue(property_id: str, month: int, year: int, property_timezone: str = "UTC", db_session=None) -> Decimal:
     """
     Calculates revenue for a specific month.
     """
 
-    start_date = datetime(year, month, 1)
+    # FIX: Month boundaries must be computed in the property's own local
+    # timezone, not naive UTC. check_in_date is stored as UTC (TIMESTAMPTZ),
+    # but a check-in that reads "March 1, 00:30" on the client's own records
+    # (e.g. a Europe/Paris property) is "Feb 29, 23:30" in UTC. Comparing the
+    # raw UTC timestamp against naive datetime(year, month, 1) boundaries
+    # silently bucketed that reservation into February instead of March -
+    # this is exactly why Sunset Properties' March dashboard total didn't
+    # match their internal records (see database/seed.sql: res-tz-1). We
+    # build the month boundary in the property's local time and convert it
+    # to UTC before querying, so bucketing matches the property owner's own
+    # calendar instead of the server's UTC clock.
+    tz = ZoneInfo(property_timezone)
+
+    local_start = datetime(year, month, 1, tzinfo=tz)
     if month < 12:
-        end_date = datetime(year, month + 1, 1)
+        local_end = datetime(year, month + 1, 1, tzinfo=tz)
     else:
-        end_date = datetime(year + 1, 1, 1)
-        
+        local_end = datetime(year + 1, 1, 1, tzinfo=tz)
+
+    start_date = local_start.astimezone(ZoneInfo("UTC"))
+    end_date = local_end.astimezone(ZoneInfo("UTC"))
+
     print(f"DEBUG: Querying revenue for {property_id} from {start_date} to {end_date}")
 
     # SQL Simulation (This would be executed against the actual DB)
