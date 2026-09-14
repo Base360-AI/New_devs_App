@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException
@@ -43,10 +43,18 @@ async def calculate_total_revenue(
             "start": start, "end": end,
         })).all()
 
+    # Sum exact NUMERIC values first; round once per currency for the report.
+    totals = {
+        row.currency: format(row.total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP), "f")
+        for row in rows
+    }
+    if None in totals:
+        raise ValueError("Revenue currency is missing")
+    currency = next(iter(totals)) if len(totals) == 1 else None
     return {
         "property_id": property_id, "tenant_id": tenant_id,
         "year": year, "month": month, "timezone": property_row.timezone,
-        "total": str(sum((row.total for row in rows), Decimal("0"))),
-        "currency": "USD",
+        "total": totals[currency] if currency else ("0.00" if not totals else None),
+        "currency": currency, "totals_by_currency": totals,
         "count": sum(row.count for row in rows),
     }

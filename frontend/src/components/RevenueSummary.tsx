@@ -3,8 +3,10 @@ import { SecureAPI } from '../lib/secureApi';
 
 interface RevenueData {
     property_id: string;
-    total_revenue: number;
-    currency: string;
+    total_revenue: string | null;
+    currency: string | null;
+    totals_by_currency: Record<string, string>;
+    timezone: string;
     reservations_count: number;
 }
 
@@ -32,47 +34,35 @@ export const RevenueSummary: React.FC<RevenueSummaryProps> = ({ propertyId, year
         return () => { active = false; };
     }, [propertyId, year, month]);
 
-    if (loading) {
-        return (
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-                <div className="animate-pulse space-y-4">
-                    <div className="h-4 bg-gray-100 rounded w-1/4"></div>
-                    <div className="h-8 bg-gray-100 rounded w-1/2"></div>
-                    <div className="flex gap-4 pt-4">
-                        <div className="h-12 bg-gray-100 rounded flex-1"></div>
-                        <div className="h-12 bg-gray-100 rounded flex-1"></div>
-                    </div>
-                </div>
-            </div>
-        );
-    }
-
-    if (error) return <div className="p-4 text-red-500 bg-red-50 rounded-lg">{error}</div>;
+    if (loading) return <div role="status" className="bg-white p-6 rounded-xl border border-gray-200">Loading revenue…</div>;
+    if (error) return <div role="alert" className="p-4 text-red-500 bg-red-50 rounded-lg">{error}</div>;
     if (!data) return null;
 
-    const displayTotal = Math.round(data.total_revenue * 100) / 100;
-
     return (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition-shadow duration-300">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
             {showRaw && (
-                <div className="p-3 bg-gray-50 text-xs font-mono border-b border-gray-100 overflow-auto max-h-32">
-                    <strong className="block mb-1 text-gray-500 uppercase tracking-wider text-[10px]">Raw API Response</strong>
-                    <pre className="text-gray-700">{JSON.stringify(data, null, 2)}</pre>
+                <div className="p-3 bg-gray-50 text-xs font-mono border-b border-gray-100 overflow-auto">
+                    <strong>Raw API Response</strong>
+                    <pre>{JSON.stringify(data, null, 2)}</pre>
                 </div>
             )}
-
             <div className="p-6">
-                <div className="flex items-center justify-between mb-6">
-                    <div>
-                        <h2 className="text-sm font-medium text-gray-500 uppercase tracking-wide">Total Revenue</h2>
-                        <div className="flex items-baseline gap-2 mt-1">
-                            <span className="text-3xl font-bold text-gray-900 tracking-tight">
-                                {data.currency} {displayTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            </span>
-                        </div>
+                <div className="mb-6">
+                    <h2 className="text-sm font-medium text-gray-500 uppercase tracking-wide">Total Revenue</h2>
+                    <div className="mt-1" aria-live="polite">
+                        {Object.entries(data.totals_by_currency).map(([currency, total]) => (
+                            <p key={currency} className="text-3xl font-bold text-gray-900 tracking-tight">
+                                {currency} {total}
+                            </p>
+                        ))}
+                        {data.reservations_count === 0 && (
+                            <p className="text-xl text-gray-700">No revenue for this period (0.00)</p>
+                        )}
                     </div>
+                    <p className="text-xs text-gray-500 mt-2">
+                        Check-in dates in {data.timezone}. Currencies reported separately.
+                    </p>
                 </div>
-
                 <div className="grid grid-cols-2 gap-4 pt-4 border-t border-gray-100">
                     <div>
                         <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Property ID</p>
@@ -80,20 +70,10 @@ export const RevenueSummary: React.FC<RevenueSummaryProps> = ({ propertyId, year
                     </div>
                     <div>
                         <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Reservations</p>
-                        <p className="text-sm font-semibold text-gray-700 mt-1">{data.reservations_count} <span className="font-normal text-gray-400">bookings</span></p>
+                        <p className="text-sm font-semibold text-gray-700 mt-1">
+                            {data.reservations_count} <span className="font-normal text-gray-400">bookings</span>
+                        </p>
                     </div>
-                </div>
-
-                {/* Precision Warning Area */}
-                <div className="mt-4 h-6">
-                    {Math.abs(data.total_revenue - displayTotal) > 0.000001 && showRaw && (
-                        <div className="flex items-center text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded">
-                            <svg className="h-4 w-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                            </svg>
-                            Precision Mismatch Detected
-                        </div>
-                    )}
                 </div>
             </div>
         </div>
