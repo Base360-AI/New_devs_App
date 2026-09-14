@@ -83,7 +83,8 @@ async def authenticate_request(
     # Check cache first
     if token_hash in auth_cache:
         cached_data = auth_cache[token_hash]
-        if datetime.now().timestamp() - cached_data["timestamp"] < CACHE_DURATION:
+        if (datetime.now().timestamp() - cached_data["timestamp"] < CACHE_DURATION
+                and datetime.now().timestamp() < cached_data.get("expires_at", 0)):
             cached_user = cached_data["user"]
             # If not, force a refresh to get proper tenant isolation
             if not cached_user.tenant_id:
@@ -98,10 +99,10 @@ async def authenticate_request(
             # Remove expired cache entry
             del auth_cache[token_hash]
 
-    logger.info(f"AUTH: Starting authentication - Token hash: {token_hash}, Token preview: {token[:20]}...")
+    logger.info(f"AUTH: Starting authentication - Token hash: {token_hash}")
 
     try:
-        logger.debug(f"AUTH: Verifying token with Supabase - Token: {token[:20]}...")
+        logger.debug("AUTH: Verifying token")
 
         # Verify token - handle both Supabase tokens and custom JWT tokens
         try:
@@ -111,7 +112,8 @@ async def authenticate_request(
                     token, 
                     settings.secret_key, 
                     algorithms=["HS256"],
-                    audience="authenticated"  # Accept tokens with aud: "authenticated"
+                    audience="authenticated",
+                    options={"require_exp": True},
                 )
                 logger.info(f"AUTH: Successfully decoded custom JWT token for {payload.get('email')}")
                 
@@ -120,6 +122,7 @@ async def authenticate_request(
                     def __init__(self, payload):
                         self.id = payload.get('id')
                         self.email = payload.get('email')
+                        self.tenant_id = payload.get('tenant_id')
                         self.app_metadata = payload.get('app_metadata', {})
                         self.user_metadata = payload.get('user_metadata', {})
                         self.raw_app_metadata = payload.get('app_metadata', {})
@@ -281,6 +284,7 @@ async def authenticate_request(
         auth_cache[token_hash] = {
             "user": auth_user,
             "timestamp": datetime.now().timestamp(),
+            "expires_at": jwt.get_unverified_claims(token).get("exp", 0),
         }
 
         # Clean up old cache entries (keep cache size manageable)
