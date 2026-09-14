@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import { User, Session } from '@supabase/supabase-js';
+import { User } from '@supabase/supabase-js';
+import type { AuthSession } from '../lib/localAuthClient';
 import { supabase } from '../lib/supabase';
 import { authOptimizer } from '../utils/authOptimizer';
 import { sessionRecovery } from '../utils/sessionRecovery';
@@ -42,7 +43,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   // Helper function to enrich user object with tenant_id from JWT claims and metadata  
-  const enrichUserWithTenant = useCallback((session: Session): EnhancedUser => {
+  const enrichUserWithTenant = useCallback((session: AuthSession): EnhancedUser => {
     const enhancedUser = session.user as EnhancedUser;
 
     // Extract tenant_id with priority: JWT claims > app_metadata > user_metadata
@@ -238,7 +239,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signIn = async (email: string, password: string) => {
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
+      const { session, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
@@ -247,11 +248,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { error };
       }
 
-      if (data.session) {
-        const enrichedUser = enrichUserWithTenant(data.session);
+      if (session) {
+        const enrichedUser = enrichUserWithTenant(session);
         setUser(enrichedUser);
         setIsAuthenticated(true);
-        authOptimizer.storeSession(data.session);
+        authOptimizer.storeSession(session);
 
         // Restart session persistence manager after successful login
         sessionPersistenceManager.start();
