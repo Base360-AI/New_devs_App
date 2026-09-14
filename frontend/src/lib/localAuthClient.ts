@@ -1,4 +1,5 @@
 // Local authentication client to replace Supabase
+import { getBackendUrl } from '../utils/getBackendUrl';
 interface AuthUser {
   id: string;
   email: string;
@@ -10,7 +11,7 @@ interface AuthUser {
   created_at?: string;
 }
 
-interface AuthSession {
+export interface AuthSession {
   access_token: string;
   refresh_token?: string;
   user: AuthUser;
@@ -39,7 +40,7 @@ class LocalAuthClient {
   }
 
   private getApiUrl(): string {
-    return import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
+    return getBackendUrl();
   }
 
   private notifySubscribers(event: string, session: AuthSession | null) {

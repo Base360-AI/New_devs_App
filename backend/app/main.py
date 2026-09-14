@@ -127,6 +127,11 @@ async def lifespan(app: FastAPI):
     await async_processor.shutdown()
     logger.info("Async processor shutdown completed")
 
+    from .core.database_pool import db_pool
+    from .services.cache import redis_client as revenue_redis
+    await db_pool.close()
+    await revenue_redis.aclose()
+
     # Close connection pool
     try:
         from .core.supabase_connection_pool import supabase_pool

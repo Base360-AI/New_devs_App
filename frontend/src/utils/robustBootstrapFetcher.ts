@@ -124,10 +124,7 @@ async function tryMultipleEndpoints(token: string): Promise<any | null> {
     : [
         // Production - relative URLs first (no CORS issues)
         '/api/v1/bootstrap',
-        '/api/v1/auth/bootstrap',
-        // Then try absolute URLs as fallback
-        'https://pms.base360.ai/api/v1/bootstrap',
-        'https://pms.base360.ai/api/v1/auth/bootstrap'
+        '/api/v1/auth/bootstrap'
       ];
   
   // Try first endpoint with longer timeout
