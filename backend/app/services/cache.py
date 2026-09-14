@@ -10,7 +10,7 @@ async def get_revenue_summary(property_id: str, tenant_id: str, month: int = Non
     """
     Fetches revenue summary, utilizing caching to improve performance.
     """
-    cache_key = "revenue:v2:" + json.dumps([property_id, year, month])
+    cache_key = "revenue:v2:" + json.dumps([tenant_id, property_id, year, month])
     
     # Try to get from cache
     cached = await redis_client.get(cache_key)
