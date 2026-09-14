@@ -1,9 +1,11 @@
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.auth import authenticate_request
+from app.core.database_pool import db_pool
 from app.models.auth import AuthenticatedUser
 from app.services.cache import get_revenue_summary
 
@@ -15,6 +17,22 @@ def dashboard_tenant(user: AuthenticatedUser = Depends(authenticate_request)) ->
     if not user.tenant_id:
         raise HTTPException(status_code=403, detail="Tenant access required")
     return user.tenant_id
+
+
+@router.get("/dashboard/properties")
+async def get_dashboard_properties(response: Response, tenant_id: str = Depends(dashboard_tenant)):
+    response.headers["Cache-Control"] = "private, no-store"
+    try:
+        await db_pool.initialize()
+        async with db_pool.get_session() as session:
+            rows = await session.execute(text("""
+                SELECT id, name, timezone FROM properties
+                WHERE tenant_id = :tenant_id ORDER BY id
+            """), {"tenant_id": tenant_id})
+            return [dict(row) for row in rows.mappings()]
+    except (SQLAlchemyError, OSError):
+        logger.exception("Property database unavailable")
+        raise HTTPException(status_code=503, detail="Property data temporarily unavailable")
 
 
 @router.get("/dashboard/summary")

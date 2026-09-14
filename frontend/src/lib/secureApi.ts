@@ -1458,6 +1458,10 @@ export class SecureAPIClient {
     return this.executeRequest<any>(`/api/v1/dashboard/summary?${queryParams}`, {}, null, false);
   }
 
+  async getDashboardProperties(): Promise<Array<{ id: string; name: string; timezone: string }>> {
+    return this.executeRequest('/api/v1/dashboard/properties', {}, null, false);
+  }
+
   async uploadCompanyLogo(logo_url: string) {
     return this.request<any>('/api/v1/company-settings/logo', {
       method: 'POST',
