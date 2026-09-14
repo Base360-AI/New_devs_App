@@ -1,8 +1,9 @@
 from datetime import datetime
 from decimal import Decimal
 from typing import Dict, Any, List
+from zoneinfo import ZoneInfo
 
-async def calculate_monthly_revenue(property_id: str, month: int, year: int, db_session=None) -> Decimal:
+async def calculate_monthly_revenue(property_id: str, month: int, year: int, tenant_id: str, db_session=None) -> Decimal:
     """
     Calculates revenue for a specific month.
     """
@@ -29,9 +30,9 @@ async def calculate_monthly_revenue(property_id: str, month: int, year: int, db_
     # result = await db.fetch_val(query, property_id, tenant_id, start_date, end_date)
     # return result or Decimal('0')
     
-    return Decimal('0') # Placeholder for now until DB connection is finalized
+    return Decimal((await calculate_total_revenue(property_id, tenant_id, month, year))['total'])
 
-async def calculate_total_revenue(property_id: str, tenant_id: str) -> Dict[str, Any]:
+async def calculate_total_revenue(property_id: str, tenant_id: str, month: int = None, year: int = None) -> Dict[str, Any]:
     """
     Aggregates revenue from database.
     """
@@ -44,24 +45,34 @@ async def calculate_total_revenue(property_id: str, tenant_id: str) -> Dict[str,
         await db_pool.initialize()
         
         if db_pool.session_factory:
-            async with db_pool.get_session() as session:
+            async with await db_pool.get_session() as session:
                 # Use SQLAlchemy text for raw SQL
                 from sqlalchemy import text
+
+                params = {"property_id": property_id, "tenant_id": tenant_id}
+                date_filter = ""
+                if month is not None and year is not None:
+                    property_result = await session.execute(text("""
+                        SELECT timezone FROM properties
+                        WHERE id = :property_id AND tenant_id = :tenant_id
+                    """), params)
+                    local_timezone = ZoneInfo(property_result.scalar() or 'UTC')
+                    params['start'] = datetime(year, month, 1, tzinfo=local_timezone)
+                    params['end'] = datetime(year + (month == 12), month % 12 + 1, 1, tzinfo=local_timezone)
+                    date_filter = "AND check_in_date >= :start AND check_in_date < :end"
                 
-                query = text("""
+                query = text(f"""
                     SELECT 
                         property_id,
                         SUM(total_amount) as total_revenue,
                         COUNT(*) as reservation_count
                     FROM reservations 
                     WHERE property_id = :property_id AND tenant_id = :tenant_id
+                    {date_filter}
                     GROUP BY property_id
                 """)
                 
-                result = await session.execute(query, {
-                    "property_id": property_id, 
-                    "tenant_id": tenant_id
-                })
+                result = await session.execute(query, params)
                 row = result.fetchone()
                 
                 if row:
@@ -107,3 +118,5 @@ async def calculate_total_revenue(property_id: str, tenant_id: str) -> Dict[str,
             "currency": "USD",
             "count": mock_property_data['count']
         }
+    finally:
+        await db_pool.close()
