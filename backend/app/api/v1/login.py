@@ -35,7 +35,7 @@ async def login(request: LoginRequest):
     """Login endpoint for local authentication"""
     try:
         email = request.email.lower().strip()
-        password = request.password.strip()
+        password = request.password
         
         logger.info(f"[LOGIN] Attempting login for: {email}")
         
@@ -100,17 +100,15 @@ async def login(request: LoginRequest):
             )
         
         # For other users, check if they exist in the database
-        # This is a simplified auth - in production you'd check password hashes
+        if not (settings.supabase_url and settings.supabase_service_role_key):
+            raise HTTPException(status_code=401, detail="Invalid credentials")
+
         try:
-            # Check if user exists in Supabase auth
-            user_result = supabase.auth.admin.list_users()
-            users = user_result if hasattr(user_result, '__iter__') else []
-            
-            user = None
-            for u in users:
-                if u.email and u.email.lower() == email:
-                    user = u
-                    break
+            # Listing users proves existence, not knowledge of their password.
+            try:
+                user = supabase.auth.sign_in_with_password({"email": email, "password": password}).user
+            except Exception:
+                raise HTTPException(status_code=401, detail="Invalid credentials")
                     
             if not user:
                 logger.warning(f"[LOGIN] User not found: {email}")
