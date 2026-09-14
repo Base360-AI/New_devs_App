@@ -11,6 +11,10 @@ const PROPERTIES = [
 
 const Dashboard: React.FC = () => {
   const [selectedProperty, setSelectedProperty] = useState('prop-001');
+  // The supplied reservations are from March 2024.
+  const [period, setPeriod] = useState('2024-03');
+  const [annual, setAnnual] = useState(false);
+  const [year, month] = period.split('-').map(Number);
 
   return (
     <div className="p-4 lg:p-6 min-h-full">
@@ -23,7 +27,7 @@ const Dashboard: React.FC = () => {
               <div>
                 <h2 className="text-lg lg:text-xl font-medium text-gray-900 mb-2">Revenue Overview</h2>
                 <p className="text-sm lg:text-base text-gray-600">
-                  Monthly performance insights for your properties
+                  {annual ? 'Annual' : 'Monthly'} performance insights for your properties
                 </p>
               </div>
               
@@ -41,12 +45,24 @@ const Dashboard: React.FC = () => {
                     </option>
                   ))}
                 </select>
+                <label htmlFor="revenue-period" className="text-xs font-medium text-gray-700 mt-3 mb-1">Reporting month</label>
+                <input id="revenue-period" type="month" min="0002-01" max="9998-12"
+                  value={period} onChange={e => setPeriod(e.target.value)}
+                  className="px-3 py-2 border border-gray-300 rounded-md text-sm" />
+                <label className="text-sm text-gray-700 mt-2">
+                  <input type="checkbox" checked={annual} onChange={e => setAnnual(e.target.checked)} className="mr-2" />
+                  Show full year{year ? ` (${year})` : ''}
+                </label>
               </div>
             </div>
           </div>
 
           <div className="space-y-6">
-            <RevenueSummary propertyId={selectedProperty} />
+            {!period && <p>Select a reporting month.</p>}
+            {selectedProperty && year >= 2 && year <= 9998 && month >= 1 && month <= 12 && (
+              <RevenueSummary key={`${selectedProperty}:${period}:${annual}`}
+                propertyId={selectedProperty} year={year} month={annual ? undefined : month} />
+            )}
           </div>
         </div>
       </div>

@@ -13,12 +13,12 @@ redis_client = redis.Redis.from_url(
     socket_connect_timeout=1, socket_timeout=1,
 )
 
-async def get_revenue_summary(property_id: str, tenant_id: str) -> Dict[str, Any]:
+async def get_revenue_summary(property_id: str, tenant_id: str, year: int, month: int | None) -> Dict[str, Any]:
     """
     Fetches revenue summary, utilizing caching to improve performance.
     """
     # New namespace also excludes entries produced by the old, shared cache.
-    identity = [tenant_id, property_id]
+    identity = [tenant_id, property_id, year, month]
     cache_key = "revenue:v2:" + json.dumps(identity, separators=(",", ":"))
     
     # Try to get from cache
@@ -26,7 +26,7 @@ async def get_revenue_summary(property_id: str, tenant_id: str) -> Dict[str, Any
         cached = await redis_client.get(cache_key)
         if cached:
             data = json.loads(cached)
-            if isinstance(data, dict) and [data.get(k) for k in ("tenant_id", "property_id")] == identity:
+            if isinstance(data, dict) and [data.get(k) for k in ("tenant_id", "property_id", "year", "month")] == identity:
                 return data
     except (RedisError, ValueError, TypeError):
         logger.warning("Revenue cache unavailable or invalid; querying the database")
@@ -35,7 +35,7 @@ async def get_revenue_summary(property_id: str, tenant_id: str) -> Dict[str, Any
     from app.services.reservations import calculate_total_revenue
     
     # Calculate revenue
-    result = await calculate_total_revenue(property_id, tenant_id)
+    result = await calculate_total_revenue(property_id, tenant_id, year, month)
     
     # Cache the result for 5 minutes
     try:

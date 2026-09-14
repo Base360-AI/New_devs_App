@@ -9,39 +9,28 @@ interface RevenueData {
 }
 
 interface RevenueSummaryProps {
-    propertyId?: string;
-    debugTenant?: string; 
+    propertyId: string;
+    year: number;
+    month?: number;
     showRaw?: boolean;
 }
 
-export const RevenueSummary: React.FC<RevenueSummaryProps> = ({ propertyId = 'prop-001', debugTenant, showRaw }) => {
+export const RevenueSummary: React.FC<RevenueSummaryProps> = ({ propertyId, year, month, showRaw }) => {
     const [data, setData] = useState<RevenueData | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
 
-    const activeTenant = debugTenant || 'candidate';
-
     useEffect(() => {
-        const fetchRevenue = async () => {
-            setLoading(true);
-            try {
-                // Use SecureAPI to handle authentication automatically
-                // We pass the simulatedTenant option which SecureAPI will attach as a header
-                const response = await SecureAPI.getDashboardSummary(propertyId, {
-                    simulatedTenant: activeTenant,
-                    timestamp: Date.now()
-                });
-                setData(response);
-            } catch (err) {
-                setError('Failed to load revenue data');
-                console.error(err);
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        fetchRevenue();
-    }, [propertyId, activeTenant]);
+        let active = true;
+        setLoading(true);
+        setError('');
+        setData(null);
+        SecureAPI.getDashboardSummary(propertyId, year, month)
+            .then(response => { if (active) setData(response); })
+            .catch(() => { if (active) setError('Failed to load revenue data'); })
+            .finally(() => { if (active) setLoading(false); });
+        return () => { active = false; };
+    }, [propertyId, year, month]);
 
     if (loading) {
         return (

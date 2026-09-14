@@ -1450,22 +1450,12 @@ export class SecureAPIClient {
 
   // ============= DASHBOARD API =============
   /**
-   * Get dashboard summary with optional simulation header
+   * Revenue is cached on the server using tenant + property + period.
    */
-  async getDashboardSummary(propertyId: string, options?: { simulatedTenant?: string, timestamp?: number }) {
-    const queryParams = new URLSearchParams({ property_id: propertyId });
-    if (options?.timestamp) {
-      queryParams.append('_t', options.timestamp.toString());
-    }
-
-    const requestOptions: RequestInit = {};
-    if (options?.simulatedTenant) {
-      requestOptions.headers = {
-        'X-Simulated-Tenant': options.simulatedTenant
-      };
-    }
-
-    return this.request<any>(`/api/v1/dashboard/summary?${queryParams}`, requestOptions);
+  async getDashboardSummary(propertyId: string, year: number, month?: number) {
+    const queryParams = new URLSearchParams({ property_id: propertyId, year: String(year) });
+    if (month !== undefined) queryParams.set('month', String(month));
+    return this.executeRequest<any>(`/api/v1/dashboard/summary?${queryParams}`, {}, null, false);
   }
 
   async uploadCompanyLogo(logo_url: string) {
