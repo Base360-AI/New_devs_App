@@ -256,7 +256,12 @@ async def authenticate_request(
         logger.info(f"User: {user.email} (ID: {user.id})")
 
         # Use TenantResolver for comprehensive tenant resolution
-        tenant_id = await TenantResolver.resolve_tenant_id(token=token, user_id=user.id, user_email=user.email)
+        tenant_id = TenantResolver.resolve_tenant_from_user({
+            "tenant_id": getattr(user, "tenant_id", None),
+            "app_metadata": getattr(user, "app_metadata", None),
+        })
+        if not tenant_id:
+            raise HTTPException(status_code=403, detail="Tenant access required")
 
         # If we found a tenant_id and it's not in the user's metadata, update it for next time
         current_tenant_in_metadata = None
