@@ -143,8 +143,23 @@ async def login(request: LoginRequest):
                 (user.app_metadata and user.app_metadata.get("role") == "admin")
             )
             
-            # Resolve tenant ID
-            tenant_id = await TenantResolver.resolve_tenant_id(user_id=user.id, user_email=user.email)
+            # Resolve the tenant from the account itself. No default: a user
+            # without a tenant must not be issued a token that lands in somebody
+            # else's data.
+            tenant_id = await TenantResolver.resolve_tenant_id(
+                user_id=user.id,
+                user_email=user.email,
+                user_data={
+                    "app_metadata": getattr(user, "app_metadata", None) or {},
+                    "user_metadata": getattr(user, "user_metadata", None) or {},
+                },
+            )
+            if not tenant_id:
+                logger.warning(f"[LOGIN] No tenant associated with {email}")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="No tenant associated with this account"
+                )
             
             # Create JWT token
             user_data = {
@@ -152,6 +167,7 @@ async def login(request: LoginRequest):
                 "email": user.email,
                 "is_admin": is_admin,
                 "tenant_id": tenant_id,
+                "app_metadata": {"role": "admin" if is_admin else "user", "tenant_id": tenant_id},
                 "exp": datetime.utcnow() + timedelta(hours=24),
                 "aud": "authenticated"
             }

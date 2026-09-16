@@ -103,6 +103,9 @@ async def authenticate_request(
     try:
         logger.debug(f"AUTH: Verifying token with Supabase - Token: {token[:20]}...")
 
+        # Claims of the verified token, used to resolve the tenant below.
+        token_payload = None
+
         # Verify token - handle both Supabase tokens and custom JWT tokens
         try:
             # First try to decode as a custom JWT token.
@@ -114,6 +117,7 @@ async def authenticate_request(
                     audience="authenticated"  # Accept tokens with aud: "authenticated"
                 )
                 logger.info(f"AUTH: Successfully decoded custom JWT token for {payload.get('email')}")
+                token_payload = payload
                 
                 # Create a mock user object from JWT payload
                 class MockUser:
@@ -252,8 +256,28 @@ async def authenticate_request(
         logger.info(f"==================== TENANT ID EXTRACTION ====================")
         logger.info(f"User: {user.email} (ID: {user.id})")
 
-        # Use TenantResolver for comprehensive tenant resolution
-        tenant_id = await TenantResolver.resolve_tenant_id(token=token, user_id=user.id, user_email=user.email)
+        # Resolve the tenant from the verified credential. Never fall back to a
+        # default: an unrecognised user used to be handed tenant-a, i.e. another
+        # client's data.
+        user_data = {
+            "app_metadata": getattr(user, "app_metadata", None) or {},
+            "user_metadata": getattr(user, "user_metadata", None) or {},
+        }
+        tenant_id = await TenantResolver.resolve_tenant_id(
+            user_id=user.id,
+            user_email=user.email,
+            token_payload=token_payload,
+            user_data=user_data,
+        )
+
+        if not tenant_id:
+            logger.warning(
+                f"AUTH: No tenant on credential for {user.email} (hash={token_hash}) - rejecting"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token carries no tenant",
+            )
 
         # If we found a tenant_id and it's not in the user's metadata, update it for next time
         current_tenant_in_metadata = None
@@ -510,7 +534,17 @@ async def verify_token_ws(token: str) -> Optional[AuthenticatedUser]:
 
         # Use the comprehensive tenant resolver (same as regular auth)
         logger.info(f"WS_AUTH: Resolving tenant for user {user.email}")
-        tenant_id = await TenantResolver.resolve_tenant_id(token=token, user_id=user.id, user_email=user.email)
+        tenant_id = await TenantResolver.resolve_tenant_id(
+            user_id=user.id,
+            user_email=user.email,
+            user_data={
+                "app_metadata": getattr(user, "app_metadata", None) or {},
+                "user_metadata": getattr(user, "user_metadata", None) or {},
+            },
+        )
+        if not tenant_id:
+            logger.warning(f"WS_AUTH: No tenant on credential for {user.email} - rejecting")
+            return None
 
         auth_user = AuthenticatedUser(
             id=user.id,
