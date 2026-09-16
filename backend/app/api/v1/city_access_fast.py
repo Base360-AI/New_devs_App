@@ -165,8 +165,8 @@ async def get_city_access_fast(
         # ✅ UNIFIED TENANT RESOLUTION: Use same TenantResolver as auth.py for consistency
         logger.info(f"🔍 TENANT_RESOLUTION: Starting unified tenant resolution for user {user_email}")
         
-        # Use the same comprehensive tenant resolver as authentication
-        tenant_id = await TenantResolver.resolve_tenant_id(user_id=user_id, user_email=user_email)
+        # Use the tenant resolved by authentication: one credential, one tenant.
+        tenant_id = user.tenant_id
         
         logger.info(f"✅ TENANT_RESOLUTION: Resolved tenant_id for {user_email}: {tenant_id}")
         
