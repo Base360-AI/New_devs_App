@@ -49,10 +49,16 @@ async def calculate_total_revenue(property_id: str, tenant_id: str) -> Dict[str,
             # Use SQLAlchemy text for raw SQL
             from sqlalchemy import text
             
+            # Round each reservation to cents BEFORE summing. total_amount is
+            # NUMERIC(10,3), so summing at full precision and rounding once at
+            # the end disagrees with the client, who adds up invoices that were
+            # each charged to the cent: 333.333 + 333.333 + 333.334 reports as
+            # 1000.00 here but 999.99 in their books. Round at the point revenue
+            # is recognised - per reservation - so both sides agree.
             query = text("""
                 SELECT 
                     property_id,
-                    SUM(total_amount) as total_revenue,
+                    SUM(ROUND(total_amount, 2)) as total_revenue,
                     COUNT(*) as reservation_count
                 FROM reservations 
                 WHERE property_id = :property_id AND tenant_id = :tenant_id
@@ -66,7 +72,8 @@ async def calculate_total_revenue(property_id: str, tenant_id: str) -> Dict[str,
             row = result.fetchone()
             
             if row:
-                total_revenue = Decimal(str(row.total_revenue))
+                # Decimal throughout: money must never pass through a float.
+                total_revenue = Decimal(str(row.total_revenue)).quantize(Decimal("0.01"))
                 return {
                     "property_id": property_id,
                     "tenant_id": tenant_id,
