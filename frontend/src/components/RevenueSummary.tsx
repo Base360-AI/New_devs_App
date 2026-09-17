@@ -63,8 +63,10 @@ export const RevenueSummary: React.FC<RevenueSummaryProps> = ({ propertyId = 'pr
     if (error) return <div className="p-4 text-red-500 bg-red-50 rounded-lg">{error}</div>;
     if (!data) return null;
 
-    // API sends integer minor units to avoid float drift; convert for display only.
-    const scale = data.amount_scale ?? 1000;
+    // API contract: total_revenue is integer minor units when amount_scale is set.
+    // Do NOT default to 1000 — a missing scale means major units (e.g. 2250 dollars),
+    // and dividing those by 1000 shows "$2.25" instead of "$2,250.00".
+    const scale = data.amount_scale && data.amount_scale > 0 ? data.amount_scale : 1;
     const displayTotal = data.total_revenue / scale;
 
     return (
