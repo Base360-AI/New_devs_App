@@ -1,6 +1,14 @@
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Dict, Any, List
+
+# NUMERIC(10,3) amounts → integer minor units (thousandths of major currency).
+MONEY_SCALE = Decimal("1000")
+
+
+def to_minor_units(amount: Decimal) -> int:
+    """Convert a Decimal major-unit amount to integer minor units."""
+    return int((amount * MONEY_SCALE).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
 
 async def calculate_monthly_revenue(property_id: str, month: int, year: int, db_session=None) -> Decimal:
@@ -70,7 +78,7 @@ async def calculate_total_revenue(property_id: str, tenant_id: str) -> Dict[str,
             return {
                 "property_id": property_id,
                 "tenant_id": tenant_id,
-                "total": str(total_revenue),
+                "total": to_minor_units(total_revenue),
                 "currency": "USD",
                 "count": row.reservation_count,
             }
@@ -78,7 +86,7 @@ async def calculate_total_revenue(property_id: str, tenant_id: str) -> Dict[str,
         return {
             "property_id": property_id,
             "tenant_id": tenant_id,
-            "total": "0.00",
+            "total": 0,
             "currency": "USD",
             "count": 0,
         }
