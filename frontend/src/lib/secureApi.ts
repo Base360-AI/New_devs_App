@@ -1450,22 +1450,25 @@ export class SecureAPIClient {
 
   // ============= DASHBOARD API =============
   /**
-   * Get dashboard summary with optional simulation header
+   * Get the revenue summary for a property. Pass month + year for a single
+   * month, otherwise returns lifetime revenue.
    */
-  async getDashboardSummary(propertyId: string, options?: { simulatedTenant?: string, timestamp?: number }) {
+  async getDashboardSummary(propertyId: string, options?: { month?: number, year?: number, timestamp?: number }) {
     const queryParams = new URLSearchParams({ property_id: propertyId });
+    if (options?.month && options?.year) {
+      queryParams.append('month', String(options.month));
+      queryParams.append('year', String(options.year));
+    }
     if (options?.timestamp) {
       queryParams.append('_t', options.timestamp.toString());
     }
 
-    const requestOptions: RequestInit = {};
-    if (options?.simulatedTenant) {
-      requestOptions.headers = {
-        'X-Simulated-Tenant': options.simulatedTenant
-      };
-    }
+    return this.request<any>(`/api/v1/dashboard/summary?${queryParams}`);
+  }
 
-    return this.request<any>(`/api/v1/dashboard/summary?${queryParams}`, requestOptions);
+  /** Properties belonging to the authenticated caller's tenant. */
+  async getDashboardProperties() {
+    return this.request<any>('/api/v1/dashboard/properties');
   }
 
   async uploadCompanyLogo(logo_url: string) {
