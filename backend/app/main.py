@@ -123,6 +123,9 @@ async def lifespan(app: FastAPI):
     # Shutdown
     logger.info("Shutting down...")
 
+    from .core.database_pool import db_pool
+    await db_pool.close()
+
     # Shutdown async processor
     await async_processor.shutdown()
     logger.info("Async processor shutdown completed")
