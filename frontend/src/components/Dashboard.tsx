@@ -1,16 +1,28 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { RevenueSummary } from "./RevenueSummary";
-
-const PROPERTIES = [
-  { id: 'prop-001', name: 'Beach House Alpha' },
-  { id: 'prop-002', name: 'City Apartment Downtown' },
-  { id: 'prop-003', name: 'Country Villa Estate' },
-  { id: 'prop-004', name: 'Lakeside Cottage' },
-  { id: 'prop-005', name: 'Urban Loft Modern' }
-];
+import { SecureAPI } from '../lib/secureApi';
+import { useAuth } from '../contexts/AuthContext.new';
 
 const Dashboard: React.FC = () => {
-  const [selectedProperty, setSelectedProperty] = useState('prop-001');
+  const { user } = useAuth();
+  const [properties, setProperties] = useState<{ id: string; name: string }[]>([]);
+  const [selectedProperty, setSelectedProperty] = useState('');
+  const [period, setPeriod] = useState('2024-03');
+  const [error, setError] = useState('');
+  useEffect(() => {
+    let cancelled = false;
+    setProperties([]);
+    setSelectedProperty('');
+    setError('');
+    SecureAPI.getDashboardProperties().then(items => {
+      if (cancelled) return;
+      setProperties(items);
+      setSelectedProperty(items[0]?.id || '');
+    }).catch(() => {
+      if (!cancelled) setError('Failed to load properties');
+    });
+    return () => { cancelled = true; };
+  }, [user?.id]);
 
   return (
     <div className="p-4 lg:p-6 min-h-full">
@@ -29,13 +41,19 @@ const Dashboard: React.FC = () => {
               
               {/* Property Selector */}
               <div className="flex flex-col sm:items-end">
+                <label className="text-xs font-medium text-gray-700 mb-1">
+                  Reporting month
+                  <input type="month" value={period} min="0001-01" max="9998-12"
+                    onChange={event => { if (event.target.value) setPeriod(event.target.value); }}
+                    className="block border rounded p-2 mb-2" />
+                </label>
                 <label className="text-xs font-medium text-gray-700 mb-1">Select Property</label>
                 <select
                   value={selectedProperty}
                   onChange={(e) => setSelectedProperty(e.target.value)}
                   className="block w-full sm:w-auto min-w-[200px] px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
                 >
-                  {PROPERTIES.map((property) => (
+                  {properties.map((property) => (
                     <option key={property.id} value={property.id}>
                       {property.name}
                     </option>
@@ -46,7 +64,9 @@ const Dashboard: React.FC = () => {
           </div>
 
           <div className="space-y-6">
-            <RevenueSummary propertyId={selectedProperty} />
+            {error && <p role="alert">{error}</p>}
+            {selectedProperty && <RevenueSummary key={`${user?.id}:${selectedProperty}:${period}`} propertyId={selectedProperty}
+              month={Number(period.split('-')[1])} year={Number(period.split('-')[0])} />}
           </div>
         </div>
       </div>
