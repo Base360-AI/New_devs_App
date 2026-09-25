@@ -197,6 +197,15 @@ export function isTimeoutError(error: any): boolean {
 }
 
 /**
+ * Extract the backend's error detail from a SecureAPI error, which is thrown
+ * as "API request failed: <detail>" without an HTTP status attached
+ */
+export function getApiErrorDetail(error: unknown, fallback: string): string {
+  const message = error instanceof Error ? error.message.replace(/^API request failed:\s*/, '') : '';
+  return message || fallback;
+}
+
+/**
  * Get retry delay with human-readable format
  */
 export function getRetryDelayMessage(retryCount: number, baseDelay: number = 1000): string {
