@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from typing import Dict, Any
 from app.services.cache import get_revenue_summary
-from app.services.reservations import RevenueServiceError
+from app.services.reservations import PropertyNotFoundError, RevenueServiceError
 from app.core.auth import authenticate_request as get_current_user
 
 router = APIRouter()
@@ -16,6 +16,11 @@ async def get_dashboard_summary(
     
     try:
         revenue_data = await get_revenue_summary(property_id, tenant_id)
+    except PropertyNotFoundError as error:
+        raise HTTPException(
+            status_code=404,
+            detail="Property not found",
+        ) from error
     except RevenueServiceError as error:
         raise HTTPException(
             status_code=503,

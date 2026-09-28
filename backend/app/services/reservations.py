@@ -10,6 +10,11 @@ logger = logging.getLogger(__name__)
 class RevenueServiceError(RuntimeError):
     """Raised when revenue data cannot be retrieved from the database."""
 
+
+class PropertyNotFoundError(LookupError):
+    """Raised when a property does not belong to the requesting tenant."""
+
+
 async def calculate_monthly_revenue(property_id: str, month: int, year: int, db_session=None) -> Decimal:
     """
     Calculates revenue for a specific month.
@@ -51,6 +56,20 @@ async def calculate_total_revenue(property_id: str, tenant_id: str) -> Dict[str,
             # Use SQLAlchemy text for raw SQL
             from sqlalchemy import text
 
+            property_query = text("""
+                SELECT timezone
+                FROM properties
+                WHERE id = :property_id AND tenant_id = :tenant_id
+                LIMIT 1
+            """)
+            property_result = await session.execute(property_query, {
+                "property_id": property_id,
+                "tenant_id": tenant_id
+            })
+
+            if property_result.scalar_one_or_none() is None:
+                raise PropertyNotFoundError("Property not found")
+
             query = text("""
                 SELECT
                     property_id,
@@ -86,6 +105,8 @@ async def calculate_total_revenue(property_id: str, tenant_id: str) -> Dict[str,
                 "count": 0
             }
 
+    except PropertyNotFoundError:
+        raise
     except Exception as error:
         logger.exception(
             "Revenue query failed for tenant=%s property=%s",
