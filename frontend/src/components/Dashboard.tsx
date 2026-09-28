@@ -1,16 +1,36 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { RevenueSummary } from "./RevenueSummary";
+import { useAppContext } from "../contexts/AppContext";
 
-const PROPERTIES = [
-  { id: 'prop-001', name: 'Beach House Alpha' },
-  { id: 'prop-002', name: 'City Apartment Downtown' },
-  { id: 'prop-003', name: 'Country Villa Estate' },
-  { id: 'prop-004', name: 'Lakeside Cottage' },
-  { id: 'prop-005', name: 'Urban Loft Modern' }
-];
+// Each property id is only unique WITHIN a tenant (see database/seed.sql,
+// properties has a composite PK of (id, tenant_id)) - prop-001 means a
+// different property depending on which tenant you are.
+const PROPERTIES_BY_TENANT: Record<string, { id: string; name: string }[]> = {
+  'tenant-a': [
+    { id: 'prop-001', name: 'Beach House Alpha' },
+    { id: 'prop-002', name: 'City Apartment Downtown' },
+    { id: 'prop-003', name: 'Country Villa Estate' },
+  ],
+  'tenant-b': [
+    { id: 'prop-001', name: 'Mountain Lodge Beta' },
+    { id: 'prop-004', name: 'Lakeside Cottage' },
+    { id: 'prop-005', name: 'Urban Loft Modern' },
+  ],
+};
 
 const Dashboard: React.FC = () => {
-  const [selectedProperty, setSelectedProperty] = useState('prop-001');
+  const { user } = useAppContext();
+  const PROPERTIES = (user?.tenant_id && PROPERTIES_BY_TENANT[user.tenant_id]) || [];
+  const [selectedProperty, setSelectedProperty] = useState('');
+
+  // PROPERTIES depends on user.tenant_id, which loads asynchronously after
+  // mount - sync the selection once the tenant's property list becomes
+  // available instead of getting stuck on the empty initial value.
+  useEffect(() => {
+    if (!selectedProperty && PROPERTIES.length > 0) {
+      setSelectedProperty(PROPERTIES[0].id);
+    }
+  }, [PROPERTIES, selectedProperty]);
 
   return (
     <div className="p-4 lg:p-6 min-h-full">
