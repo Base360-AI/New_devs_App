@@ -12,9 +12,10 @@ interface RevenueSummaryProps {
     propertyId?: string;
     debugTenant?: string; 
     showRaw?: boolean;
+    month?: string; // "YYYY-MM"
 }
 
-export const RevenueSummary: React.FC<RevenueSummaryProps> = ({ propertyId = 'prop-001', debugTenant, showRaw }) => {
+export const RevenueSummary: React.FC<RevenueSummaryProps> = ({ propertyId = 'prop-001', debugTenant, showRaw, month }) => {
     const [data, setData] = useState<RevenueData | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
@@ -29,7 +30,9 @@ export const RevenueSummary: React.FC<RevenueSummaryProps> = ({ propertyId = 'pr
                 // We pass the simulatedTenant option which SecureAPI will attach as a header
                 const response = await SecureAPI.getDashboardSummary(propertyId, {
                     simulatedTenant: activeTenant,
-                    timestamp: Date.now()
+                    timestamp: Date.now(),
+                    year: month ? Number(month.split('-')[0]) : undefined,
+                    month: month ? Number(month.split('-')[1]) : undefined
                 });
                 setData(response);
             } catch (err) {
@@ -41,7 +44,7 @@ export const RevenueSummary: React.FC<RevenueSummaryProps> = ({ propertyId = 'pr
         };
 
         fetchRevenue();
-    }, [propertyId, activeTenant]);
+    }, [propertyId, activeTenant, month]);
 
     if (loading) {
         return (

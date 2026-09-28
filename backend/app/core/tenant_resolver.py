@@ -69,7 +69,7 @@ class TenantResolver:
         return None
 
     @staticmethod
-    async def resolve_tenant_id(user_id: str, user_email: str, token: Optional[str] = None) -> str:
+    async def resolve_tenant_id(user_id: str, user_email: str, token: Optional[str] = None) -> Optional[str]:
         """
         Resolve tenant ID for a user.
         
@@ -80,6 +80,18 @@ class TenantResolver:
         Returns:
             Tenant ID
         """
+        if token:
+            try:
+                from jose import jwt
+                from app.config import settings
+
+                payload = jwt.decode(token, settings.secret_key, algorithms=["HS256"], audience="authenticated")
+                tenant_id = TenantResolver.resolve_tenant_from_token(payload)
+                if tenant_id:
+                    return tenant_id
+            except Exception:
+                pass
+
         # Fallback mapping by known user email.
         if user_email == "sunset@propertyflow.com":
             return "tenant-a"
@@ -88,8 +100,8 @@ class TenantResolver:
         if user_email == "candidate@propertyflow.com":
             return "tenant-a"
             
-        # Default fallback
-        return "tenant-a"
+        # Unknown user, don't guess a tenant
+        return None
 
     @staticmethod
     async def update_user_tenant_metadata(user_id: str, tenant_id: str) -> None:
