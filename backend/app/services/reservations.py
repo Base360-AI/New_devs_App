@@ -1,6 +1,6 @@
 import logging
 from datetime import datetime, timezone
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Dict
 from zoneinfo import ZoneInfo
 
@@ -80,11 +80,14 @@ async def calculate_monthly_revenue(
             row = result.fetchone()
 
             if row:
-                total_revenue = Decimal(str(row.total_revenue))
+                total_revenue = Decimal(str(row.total_revenue)).quantize(
+                    Decimal("0.01"),
+                    rounding=ROUND_HALF_UP,
+                )
                 return {
                     "property_id": property_id,
                     "tenant_id": tenant_id,
-                    "total": str(total_revenue),
+                    "total": format(total_revenue, ".2f"),
                     "currency": "USD",
                     "count": row.reservation_count
                 }
