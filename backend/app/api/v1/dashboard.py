@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Dict, Any
 from app.services.cache import get_revenue_summary
 from app.services.reservations import PropertyNotFoundError, RevenueServiceError
@@ -9,13 +9,20 @@ router = APIRouter()
 @router.get("/dashboard/summary")
 async def get_dashboard_summary(
     property_id: str,
+    year: int = Query(ge=1, le=9998),
+    month: int = Query(ge=1, le=12),
     current_user: dict = Depends(get_current_user)
 ) -> Dict[str, Any]:
     
     tenant_id = getattr(current_user, "tenant_id", "default_tenant") or "default_tenant"
     
     try:
-        revenue_data = await get_revenue_summary(property_id, tenant_id)
+        revenue_data = await get_revenue_summary(
+            property_id,
+            tenant_id,
+            year,
+            month,
+        )
     except PropertyNotFoundError as error:
         raise HTTPException(
             status_code=404,
