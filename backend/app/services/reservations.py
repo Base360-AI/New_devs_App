@@ -66,6 +66,7 @@ async def calculate_monthly_revenue(
                 FROM reservations
                 WHERE property_id = :property_id
                   AND tenant_id = :tenant_id
+                  AND currency = 'USD'
                   AND check_in_date >= :start_utc
                   AND check_in_date < :end_utc
                 GROUP BY property_id
