@@ -1449,23 +1449,24 @@ export class SecureAPIClient {
   }
 
   // ============= DASHBOARD API =============
+  async getDashboardProperties(): Promise<{
+    items: Array<{ id: string; name: string; timezone: string }>;
+  }> {
+    return this.request('/api/v1/dashboard/properties');
+  }
+
   /**
-   * Get dashboard summary with optional simulation header
+   * Get a property-local monthly dashboard summary. Tenant identity comes only
+   * from the authenticated token; it must never be accepted from the browser.
    */
-  async getDashboardSummary(propertyId: string, options?: { simulatedTenant?: string, timestamp?: number }) {
-    const queryParams = new URLSearchParams({ property_id: propertyId });
-    if (options?.timestamp) {
-      queryParams.append('_t', options.timestamp.toString());
-    }
+  async getDashboardSummary(propertyId: string, period: { year: number; month: number }) {
+    const queryParams = new URLSearchParams({
+      property_id: propertyId,
+      year: period.year.toString(),
+      month: period.month.toString()
+    });
 
-    const requestOptions: RequestInit = {};
-    if (options?.simulatedTenant) {
-      requestOptions.headers = {
-        'X-Simulated-Tenant': options.simulatedTenant
-      };
-    }
-
-    return this.request<any>(`/api/v1/dashboard/summary?${queryParams}`, requestOptions);
+    return this.request<any>(`/api/v1/dashboard/summary?${queryParams}`);
   }
 
   async uploadCompanyLogo(logo_url: string) {

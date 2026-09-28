@@ -1,0 +1,5 @@
+# Python runtime artifacts produced by the bind-mounted backend container.
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.tsbuildinfo
