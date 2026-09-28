@@ -1449,6 +1449,10 @@ export class SecureAPIClient {
   }
 
   // ============= DASHBOARD API =============
+  async getDashboardProperties() {
+    return this.request<any>('/api/v1/dashboard/properties');
+  }
+
   async getDashboardSummary(propertyId: string, year: number, month: number) {
     const queryParams = new URLSearchParams({
       property_id: propertyId,
