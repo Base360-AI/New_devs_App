@@ -186,11 +186,11 @@ export class SecureAPIClient {
         // Check if it's a valid JWT
         else if (token.includes('.') && token.split('.').length === 3) {
           const payload = JSON.parse(atob(token.split('.')[1]));
-          extractedTenantId = payload.user_metadata?.tenant_id || payload.tenant_id;
+          extractedTenantId = payload.app_metadata?.tenant_id || payload.user_metadata?.tenant_id || payload.tenant_id;
         }
 
         if (extractedTenantId) {
-          // Validate tenant ID format (should be UUID)
+          // Local assignment tenants use IDs such as tenant-a; production IDs are UUIDs.
           if (this.isValidTenantId(extractedTenantId)) {
             this.cachedTenantId = extractedTenantId;
             return this.cachedTenantId;
@@ -243,9 +243,9 @@ export class SecureAPIClient {
    * Validate tenant ID format for security
    */
   private isValidTenantId(tenantId: string): boolean {
-    // Check for UUID format (basic validation)
+    // Accept UUIDs and the local assignment's tenant IDs.
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    return typeof tenantId === 'string' && tenantId.length > 0 && uuidRegex.test(tenantId);
+    return typeof tenantId === 'string' && (uuidRegex.test(tenantId) || /^tenant-[a-z0-9-]+$/.test(tenantId));
   }
 
   /**
@@ -1449,23 +1449,17 @@ export class SecureAPIClient {
   }
 
   // ============= DASHBOARD API =============
-  /**
-   * Get dashboard summary with optional simulation header
-   */
-  async getDashboardSummary(propertyId: string, options?: { simulatedTenant?: string, timestamp?: number }) {
-    const queryParams = new URLSearchParams({ property_id: propertyId });
-    if (options?.timestamp) {
-      queryParams.append('_t', options.timestamp.toString());
-    }
+  async getDashboardProperties(): Promise<{ id: string; name: string; latest_month: string | null }[]> {
+    return this.request('/api/v1/dashboard/properties');
+  }
 
-    const requestOptions: RequestInit = {};
-    if (options?.simulatedTenant) {
-      requestOptions.headers = {
-        'X-Simulated-Tenant': options.simulatedTenant
-      };
-    }
-
-    return this.request<any>(`/api/v1/dashboard/summary?${queryParams}`, requestOptions);
+  async getDashboardSummary(propertyId: string, month: number, year: number) {
+    const queryParams = new URLSearchParams({
+      property_id: propertyId,
+      month: String(month),
+      year: String(year)
+    });
+    return this.request<any>(`/api/v1/dashboard/summary?${queryParams}`);
   }
 
   async uploadCompanyLogo(logo_url: string) {
