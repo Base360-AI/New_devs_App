@@ -13,18 +13,27 @@ class DatabasePool:
         
     async def initialize(self):
         """Initialize database connection pool"""
+        if self.session_factory:
+            return
+
         try:
-            # Create async engine with connection pooling
-            database_url = f"postgresql+asyncpg://{settings.supabase_db_user}:{settings.supabase_db_password}@{settings.supabase_db_host}:{settings.supabase_db_port}/{settings.supabase_db_name}"
+            # Create async engine with connection pooling from settings.database_url
+            db_url = settings.database_url
+            if db_url.startswith("postgresql://"):
+                database_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+            elif db_url.startswith("postgres://"):
+                database_url = db_url.replace("postgres://", "postgresql+asyncpg://", 1)
+            else:
+                database_url = db_url
             
             self.engine = create_async_engine(
                 database_url,
                 poolclass=QueuePool,
-                pool_size=20,  # Number of connections to maintain
-                max_overflow=30,  # Additional connections when needed
-                pool_pre_ping=True,  # Validate connections
-                pool_recycle=3600,  # Recycle connections every hour
-                echo=False  # Set to True for SQL debugging
+                pool_size=getattr(settings, 'database_pool_size', 20),
+                max_overflow=getattr(settings, 'database_max_overflow', 30),
+                pool_pre_ping=True,
+                pool_recycle=getattr(settings, 'database_pool_recycle', 3600),
+                echo=False
             )
             
             self.session_factory = async_sessionmaker(
@@ -48,7 +57,9 @@ class DatabasePool:
     async def get_session(self) -> AsyncSession:
         """Get database session from pool"""
         if not self.session_factory:
-            raise Exception("Database pool not initialized")
+            await self.initialize()
+        if not self.session_factory:
+            raise Exception("Database pool not available")
         return self.session_factory()
 
 # Global database pool instance
