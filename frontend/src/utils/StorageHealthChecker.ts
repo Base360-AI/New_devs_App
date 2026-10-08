@@ -168,9 +168,14 @@ export class StorageHealthChecker {
       try {
         const value = localStorage.getItem(key);
         if (!value) continue;
-        
+
+        // Plain strings (version marker, language, ...) are legitimate values,
+        // not corruption. Only JSON-shaped values are validated below.
+        const trimmed = value.trim();
+        if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) continue;
+
         // Try to parse as JSON
-        const parsed = JSON.parse(value);
+        const parsed = JSON.parse(trimmed);
         
         // Check if it's our storage format
         if (typeof parsed === 'object' && parsed !== null) {
