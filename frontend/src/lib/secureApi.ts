@@ -1468,6 +1468,13 @@ export class SecureAPIClient {
     return this.request<any>(`/api/v1/dashboard/summary?${queryParams}`, requestOptions);
   }
 
+  /**
+   * Get the properties belonging to the logged-in tenant
+   */
+  async getDashboardProperties(): Promise<{ properties: { id: string; name: string; timezone: string }[] }> {
+    return this.request<any>('/api/v1/dashboard/properties');
+  }
+
   async uploadCompanyLogo(logo_url: string) {
     return this.request<any>('/api/v1/company-settings/logo', {
       method: 'POST',
