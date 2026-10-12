@@ -5,7 +5,6 @@ from typing import Optional, List
 from datetime import datetime
 import logging
 import hashlib
-import asyncio
 from ..database import supabase
 from ..models.auth import AuthenticatedUser, Permission
 from ..config import settings
@@ -85,15 +84,10 @@ async def authenticate_request(
         cached_data = auth_cache[token_hash]
         if datetime.now().timestamp() - cached_data["timestamp"] < CACHE_DURATION:
             cached_user = cached_data["user"]
-            # If not, force a refresh to get proper tenant isolation
-            if not cached_user.tenant_id:
-                logger.warning(f"AUTH: Cached auth for {cached_user.email} missing tenant_id - forcing refresh")
-                del auth_cache[token_hash]
-            else:
-                logger.info(
-                    f"AUTH: Using cached authentication for token {token_hash} (tenant: {cached_user.tenant_id}) for user: {cached_user.email}"
-                )
-                return cached_user
+            logger.info(
+                f"AUTH: Using cached authentication for token {token_hash} (tenant: {cached_user.tenant_id}) for user: {cached_user.email}"
+            )
+            return cached_user
         else:
             # Remove expired cache entry
             del auth_cache[token_hash]
@@ -123,6 +117,8 @@ async def authenticate_request(
                         self.app_metadata = payload.get('app_metadata', {})
                         self.user_metadata = payload.get('user_metadata', {})
                         self.raw_app_metadata = payload.get('app_metadata', {})
+                        # Signed by us, so app_metadata/root tenant_id can be trusted
+                        self.tenant_id = TenantResolver.resolve_tenant_from_token(payload)
                         
                 user = MockUser(payload)
                 
@@ -248,25 +244,11 @@ async def authenticate_request(
         logger.info(f"AUTH: User cities from users_city table: {user_cities}")
         logger.info(f"AUTH: Admin status: {is_admin} - city access will be determined by endpoint logic")
 
-        # Use the comprehensive tenant resolver
-        logger.info(f"==================== TENANT ID EXTRACTION ====================")
-        logger.info(f"User: {user.email} (ID: {user.id})")
-
-        # Use TenantResolver for comprehensive tenant resolution
-        tenant_id = await TenantResolver.resolve_tenant_id(token=token, user_id=user.id, user_email=user.email)
-
-        # If we found a tenant_id and it's not in the user's metadata, update it for next time
-        current_tenant_in_metadata = None
-        if hasattr(user, "raw_app_metadata") and user.raw_app_metadata:
-            current_tenant_in_metadata = user.raw_app_metadata.get("tenant_id")
-        elif hasattr(user, "app_metadata") and user.app_metadata:
-            current_tenant_in_metadata = user.app_metadata.get("tenant_id")
-
-        if tenant_id and current_tenant_in_metadata != tenant_id:
-            logger.info(f"Updating user metadata with tenant_id for future requests...")
-            asyncio.create_task(TenantResolver.update_user_tenant_metadata(user.id, tenant_id))
-
-        logger.info(f"==================== TENANT ID EXTRACTION END ====================")
+        # Tenant comes only from server-controlled claims. No guessing, no default.
+        tenant_id = getattr(user, "tenant_id", None) or (getattr(user, "app_metadata", None) or {}).get("tenant_id")
+        if not tenant_id:
+            logger.warning(f"AUTH: No tenant assigned to {user.email} - rejecting")
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tenant assigned")
 
         auth_user = AuthenticatedUser(
             id=user.id,
@@ -508,9 +490,11 @@ async def verify_token_ws(token: str) -> Optional[AuthenticatedUser]:
         
         logger.info(f"WS_AUTH: Final user cities after processing: {user_cities}")
 
-        # Use the comprehensive tenant resolver (same as regular auth)
-        logger.info(f"WS_AUTH: Resolving tenant for user {user.email}")
-        tenant_id = await TenantResolver.resolve_tenant_id(token=token, user_id=user.id, user_email=user.email)
+        # Tenant comes only from server-controlled claims (same as regular auth)
+        tenant_id = (getattr(user, "app_metadata", None) or {}).get("tenant_id")
+        if not tenant_id:
+            logger.warning(f"WS_AUTH: No tenant assigned to {user.email} - rejecting")
+            return None
 
         auth_user = AuthenticatedUser(
             id=user.id,

@@ -21,13 +21,7 @@ class TenantResolver:
         Returns:
             Tenant ID if found, None otherwise
         """
-        # Try user_metadata first (most common location)
-        if 'user_metadata' in token_payload:
-            tenant_id = token_payload['user_metadata'].get('tenant_id')
-            if tenant_id:
-                return tenant_id
-
-        # Try app_metadata as fallback
+        # Never trust user_metadata: users can edit it themselves.
         if 'app_metadata' in token_payload:
             tenant_id = token_payload['app_metadata'].get('tenant_id')
             if tenant_id:
@@ -56,11 +50,6 @@ class TenantResolver:
         if 'tenant_id' in user_data:
             return user_data['tenant_id']
 
-        if 'user_metadata' in user_data:
-            tenant_id = user_data['user_metadata'].get('tenant_id')
-            if tenant_id:
-                return tenant_id
-
         if 'app_metadata' in user_data:
             tenant_id = user_data['app_metadata'].get('tenant_id')
             if tenant_id:
@@ -69,7 +58,7 @@ class TenantResolver:
         return None
 
     @staticmethod
-    async def resolve_tenant_id(user_id: str, user_email: str, token: Optional[str] = None) -> str:
+    async def resolve_tenant_id(user_id: str, user_email: str, token: Optional[str] = None) -> Optional[str]:
         """
         Resolve tenant ID for a user.
         
@@ -78,7 +67,7 @@ class TenantResolver:
             user_email: User email
             
         Returns:
-            Tenant ID
+            Tenant ID, or None if unknown (callers must reject)
         """
         # Fallback mapping by known user email.
         if user_email == "sunset@propertyflow.com":
@@ -88,8 +77,8 @@ class TenantResolver:
         if user_email == "candidate@propertyflow.com":
             return "tenant-a"
             
-        # Default fallback
-        return "tenant-a"
+        # Unknown user: fail closed, never default to another tenant's data.
+        return None
 
     @staticmethod
     async def update_user_tenant_metadata(user_id: str, tenant_id: str) -> None:

@@ -100,6 +100,10 @@ async def lifespan(app: FastAPI):
         logger.error(f"❌ Supabase connection pool initialization failed: {e}")
         # Continue startup - fallback to direct connections
 
+    # Initialize Postgres pool once (shared by all requests)
+    from .core.database_pool import db_pool
+    await db_pool.initialize()
+
     # Initialize Redis connection with timeout
     try:
         await redis_client.initialize()
