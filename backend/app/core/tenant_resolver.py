@@ -68,28 +68,33 @@ class TenantResolver:
 
         return None
 
+    # Known accounts and the tenant each one belongs to.
+    EMAIL_TENANTS = {
+        "sunset@propertyflow.com": "tenant-a",
+        "ocean@propertyflow.com": "tenant-b",
+        "candidate@propertyflow.com": "tenant-a",
+    }
+
     @staticmethod
-    async def resolve_tenant_id(user_id: str, user_email: str, token: Optional[str] = None) -> str:
+    async def resolve_tenant_id(user_id: str, user_email: str, token: Optional[str] = None) -> Optional[str]:
         """
         Resolve tenant ID for a user.
-        
+
         Args:
             user_id: User ID
             user_email: User email
-            
+
         Returns:
-            Tenant ID
+            Tenant ID, or None when the user's tenant cannot be established.
+            Returning a default here would silently grant one tenant's data to
+            every unrecognised account.
         """
-        # Fallback mapping by known user email.
-        if user_email == "sunset@propertyflow.com":
-            return "tenant-a"
-        if user_email == "ocean@propertyflow.com":
-            return "tenant-b"
-        if user_email == "candidate@propertyflow.com":
-            return "tenant-a"
-            
-        # Default fallback
-        return "tenant-a"
+        tenant_id = TenantResolver.EMAIL_TENANTS.get((user_email or "").lower())
+        if tenant_id:
+            return tenant_id
+
+        logger.warning(f"Could not resolve a tenant for {user_email!r} (user_id={user_id})")
+        return None
 
     @staticmethod
     async def update_user_tenant_metadata(user_id: str, tenant_id: str) -> None:
