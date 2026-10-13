@@ -1,11 +1,11 @@
 /**
  * SECURE MULTI-TENANT API CLIENT
- * 
+ *
  * This module provides a centralized, secure API client that ensures ALL database
  * queries go through the backend with proper tenant isolation.
- * 
+ *
  * Always use this SecureAPI client instead.
- * 
+ *
  * @security This prevents cross-tenant data leakage by enforcing backend-only database access
  */
 
@@ -1181,7 +1181,7 @@ export class SecureAPIClient {
     });
   }
 
-  // Alias for compatibility  
+  // Alias for compatibility
   async deleteAppliance(propertyId: string, applianceId: string) {
     return this.deletePropertyAppliance(propertyId, applianceId);
   }
@@ -1452,20 +1452,21 @@ export class SecureAPIClient {
   /**
    * Get dashboard summary with optional simulation header
    */
-  async getDashboardSummary(propertyId: string, options?: { simulatedTenant?: string, timestamp?: number }) {
+  async getDashboardSummary(propertyId: string, options?: { year?: number, month?: number, timestamp?: number }) {
     const queryParams = new URLSearchParams({ property_id: propertyId });
+    if (options?.year && options?.month) {
+      queryParams.append('year', options.year.toString());
+      queryParams.append('month', options.month.toString());
+    }
     if (options?.timestamp) {
       queryParams.append('_t', options.timestamp.toString());
     }
 
-    const requestOptions: RequestInit = {};
-    if (options?.simulatedTenant) {
-      requestOptions.headers = {
-        'X-Simulated-Tenant': options.simulatedTenant
-      };
-    }
+    return this.request<any>(`/api/v1/dashboard/summary?${queryParams}`);
+  }
 
-    return this.request<any>(`/api/v1/dashboard/summary?${queryParams}`, requestOptions);
+  async getDashboardProperties() {
+    return this.request<{ id: string; name: string }[]>('/api/v1/dashboard/properties');
   }
 
   async uploadCompanyLogo(logo_url: string) {
