@@ -10,11 +10,12 @@ interface RevenueData {
 
 interface RevenueSummaryProps {
     propertyId?: string;
-    debugTenant?: string;
+    year?: number;
+    month?: number;
     showRaw?: boolean;
 }
 
-export const RevenueSummary: React.FC<RevenueSummaryProps> = ({ propertyId, showRaw }) => {
+export const RevenueSummary: React.FC<RevenueSummaryProps> = ({ propertyId, year, month, showRaw }) => {
     const [data, setData] = useState<RevenueData | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
@@ -28,6 +29,8 @@ export const RevenueSummary: React.FC<RevenueSummaryProps> = ({ propertyId, show
                 // Use SecureAPI to handle authentication automatically.
                 // The tenant is derived server-side from the auth token.
                 const response = await SecureAPI.getDashboardSummary(propertyId, {
+                    year,
+                    month,
                     timestamp: Date.now()
                 });
                 setData(response);
@@ -40,7 +43,7 @@ export const RevenueSummary: React.FC<RevenueSummaryProps> = ({ propertyId, show
         };
 
         fetchRevenue();
-    }, [propertyId]);
+    }, [propertyId, year, month]);
 
     if (loading) {
         return (
