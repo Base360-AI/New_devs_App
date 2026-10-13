@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from typing import Dict, Any
 from app.services.cache import get_revenue_summary
-from app.services.reservations import RevenueUnavailableError
+from app.services.reservations import PropertyNotFoundError, RevenueUnavailableError
 from app.core.auth import authenticate_request as get_current_user
 
 router = APIRouter()
@@ -16,6 +16,9 @@ async def get_dashboard_summary(
 
     try:
         revenue_data = await get_revenue_summary(property_id, tenant_id)
+    except PropertyNotFoundError:
+        # Same response whether the property doesn't exist or belongs to another tenant
+        raise HTTPException(status_code=404, detail="Property not found")
     except RevenueUnavailableError:
         raise HTTPException(status_code=503, detail="Revenue data is temporarily unavailable")
 

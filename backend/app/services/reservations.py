@@ -38,6 +38,10 @@ class RevenueUnavailableError(Exception):
     """Raised when revenue cannot be read from the database."""
 
 
+class PropertyNotFoundError(Exception):
+    """Raised when the property does not exist for the requesting tenant."""
+
+
 async def calculate_total_revenue(property_id: str, tenant_id: str) -> Dict[str, Any]:
     """
     Aggregates revenue from database.
@@ -55,6 +59,13 @@ async def calculate_total_revenue(property_id: str, tenant_id: str) -> Dict[str,
         async with db_pool.get_session() as session:
             # Use SQLAlchemy text for raw SQL
             from sqlalchemy import text
+
+            # Property IDs are only unique per tenant: check ownership first
+            owned = await session.execute(
+                text("SELECT 1 FROM properties WHERE id = :property_id AND tenant_id = :tenant_id"),
+                {"property_id": property_id, "tenant_id": tenant_id},
+            )
+            property_found = owned.first() is not None
 
             query = text("""
                 SELECT
@@ -74,6 +85,9 @@ async def calculate_total_revenue(property_id: str, tenant_id: str) -> Dict[str,
     except Exception as e:
         logger.exception(f"Revenue query failed for {property_id} (tenant: {tenant_id})")
         raise RevenueUnavailableError(str(e)) from e
+
+    if not property_found:
+        raise PropertyNotFoundError(property_id)
 
     if row:
         total_revenue = Decimal(str(row.total_revenue))
