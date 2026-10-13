@@ -1,5 +1,5 @@
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Dict, Any
 import logging
 
@@ -42,6 +42,19 @@ class PropertyNotFoundError(Exception):
     """Raised when the property does not exist for the requesting tenant."""
 
 
+class MixedCurrencyError(Exception):
+    """Raised when a property's reservations use more than one currency."""
+
+
+CENTS = Decimal("0.01")
+
+
+def to_money(amount) -> str:
+    """Round once, at the API boundary, to cents (half-up) and serialize as a
+    fixed-point string so no float ever touches the value."""
+    return str(Decimal(amount or 0).quantize(CENTS, rounding=ROUND_HALF_UP))
+
+
 async def calculate_total_revenue(property_id: str, tenant_id: str) -> Dict[str, Any]:
     """
     Aggregates revenue from database.
@@ -69,19 +82,19 @@ async def calculate_total_revenue(property_id: str, tenant_id: str) -> Dict[str,
 
             query = text("""
                 SELECT
-                    property_id,
+                    currency,
                     SUM(total_amount) as total_revenue,
                     COUNT(*) as reservation_count
                 FROM reservations
                 WHERE property_id = :property_id AND tenant_id = :tenant_id
-                GROUP BY property_id
+                GROUP BY currency
             """)
 
             result = await session.execute(query, {
                 "property_id": property_id,
                 "tenant_id": tenant_id
             })
-            row = result.fetchone()
+            rows = result.fetchall()
     except Exception as e:
         logger.exception(f"Revenue query failed for {property_id} (tenant: {tenant_id})")
         raise RevenueUnavailableError(str(e)) from e
@@ -89,13 +102,17 @@ async def calculate_total_revenue(property_id: str, tenant_id: str) -> Dict[str,
     if not property_found:
         raise PropertyNotFoundError(property_id)
 
-    if row:
-        total_revenue = Decimal(str(row.total_revenue))
+    if len(rows) > 1:
+        # Summing amounts in different currencies would produce a meaningless total
+        raise MixedCurrencyError(property_id)
+
+    if rows:
+        row = rows[0]
         return {
             "property_id": property_id,
             "tenant_id": tenant_id,
-            "total": str(total_revenue),
-            "currency": "USD",
+            "total": to_money(row.total_revenue),
+            "currency": row.currency,
             "count": row.reservation_count
         }
 
@@ -103,7 +120,7 @@ async def calculate_total_revenue(property_id: str, tenant_id: str) -> Dict[str,
     return {
         "property_id": property_id,
         "tenant_id": tenant_id,
-        "total": "0.00",
+        "total": to_money(0),
         "currency": "USD",
         "count": 0
     }

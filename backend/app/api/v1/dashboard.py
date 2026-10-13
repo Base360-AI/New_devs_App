@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from typing import Dict, Any
 from app.services.cache import get_revenue_summary
-from app.services.reservations import PropertyNotFoundError, RevenueUnavailableError
+from app.services.reservations import MixedCurrencyError, PropertyNotFoundError, RevenueUnavailableError
 from app.core.auth import authenticate_request as get_current_user
 
 router = APIRouter()
@@ -21,14 +21,15 @@ async def get_dashboard_summary(
     except PropertyNotFoundError:
         # Same response whether the property doesn't exist or belongs to another tenant
         raise HTTPException(status_code=404, detail="Property not found")
+    except MixedCurrencyError:
+        raise HTTPException(status_code=409, detail="Reservations use more than one currency")
     except RevenueUnavailableError:
         raise HTTPException(status_code=503, detail="Revenue data is temporarily unavailable")
 
-    total_revenue_float = float(revenue_data['total'])
-
     return {
         "property_id": revenue_data['property_id'],
-        "total_revenue": total_revenue_float,
+        # Decimal string rounded to cents, e.g. "2250.00" (never a float)
+        "total_revenue": revenue_data['total'],
         "currency": revenue_data['currency'],
         "reservations_count": revenue_data['count']
     }
