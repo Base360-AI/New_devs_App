@@ -1,6 +1,6 @@
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from zoneinfo import ZoneInfo
 import logging
 
@@ -118,3 +118,26 @@ async def calculate_total_revenue(
         "currency": "USD",
         "count": 0
     }
+
+
+async def list_properties(tenant_id: str) -> List[Dict[str, str]]:
+    """Properties owned by the tenant, for the dashboard's property selector."""
+    from app.core.database_pool import db_pool
+
+    if not db_pool.session_factory:
+        raise RevenueUnavailableError("Database pool not available")
+
+    try:
+        async with db_pool.get_session() as session:
+            from sqlalchemy import text
+
+            result = await session.execute(
+                text("SELECT id, name FROM properties WHERE tenant_id = :tenant_id ORDER BY name"),
+                {"tenant_id": tenant_id},
+            )
+            rows = result.fetchall()
+    except Exception as e:
+        logger.exception(f"Property list query failed (tenant: {tenant_id})")
+        raise RevenueUnavailableError(str(e)) from e
+
+    return [{"id": row.id, "name": row.name} for row in rows]

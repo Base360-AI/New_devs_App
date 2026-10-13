@@ -1,10 +1,33 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 from app.services.cache import get_revenue_summary
-from app.services.reservations import MixedCurrencyError, PropertyNotFoundError, RevenueUnavailableError
+from app.services.reservations import (
+    MixedCurrencyError,
+    PropertyNotFoundError,
+    RevenueUnavailableError,
+    list_properties,
+)
 from app.core.auth import authenticate_request as get_current_user
 
 router = APIRouter()
+
+def _require_tenant(current_user) -> str:
+    tenant_id = getattr(current_user, "tenant_id", None)
+    if not tenant_id:
+        raise HTTPException(status_code=403, detail="User is not assigned to a tenant")
+    return tenant_id
+
+
+@router.get("/dashboard/properties")
+async def get_dashboard_properties(
+    current_user: dict = Depends(get_current_user)
+) -> List[Dict[str, str]]:
+    tenant_id = _require_tenant(current_user)
+    try:
+        return await list_properties(tenant_id)
+    except RevenueUnavailableError:
+        raise HTTPException(status_code=503, detail="Property list is temporarily unavailable")
+
 
 @router.get("/dashboard/summary")
 async def get_dashboard_summary(
@@ -14,9 +37,7 @@ async def get_dashboard_summary(
     current_user: dict = Depends(get_current_user)
 ) -> Dict[str, Any]:
 
-    tenant_id = getattr(current_user, "tenant_id", None)
-    if not tenant_id:
-        raise HTTPException(status_code=403, detail="User is not assigned to a tenant")
+    tenant_id = _require_tenant(current_user)
 
     if (year is None) != (month is None):
         raise HTTPException(status_code=422, detail="year and month must be provided together")
