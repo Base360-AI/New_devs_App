@@ -1,3 +1,4 @@
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 import logging
 from ..config import settings
@@ -14,9 +15,9 @@ class DatabasePool:
         try:
             # Create async engine with connection pooling (async engines use
             # AsyncAdaptedQueuePool by default; QueuePool is sync-only).
-            database_url = settings.database_url.replace(
-                "postgresql://", "postgresql+asyncpg://", 1
-            )
+            # Normalize any Postgres scheme (postgres://, postgresql://,
+            # postgresql+psycopg2://) to the asyncpg driver.
+            database_url = make_url(settings.database_url).set(drivername="postgresql+asyncpg")
 
             self.engine = create_async_engine(
                 database_url,
