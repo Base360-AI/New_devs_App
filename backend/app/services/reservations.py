@@ -1,38 +1,20 @@
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
-from typing import Dict, Any
+from typing import Any, Dict, Optional, Tuple
+from zoneinfo import ZoneInfo
 import logging
 
 logger = logging.getLogger(__name__)
 
-async def calculate_monthly_revenue(property_id: str, month: int, year: int, db_session=None) -> Decimal:
-    """
-    Calculates revenue for a specific month.
-    """
+def month_bounds(year: int, month: int, timezone: str) -> Tuple[datetime, datetime]:
+    """Half-open [start, end) bounds of a calendar month in the property's
+    local timezone, so a 00:30 check-in on the 1st in Paris counts for that
+    month even though it is still the previous month in UTC."""
+    tz = ZoneInfo(timezone)
+    start = datetime(year, month, 1, tzinfo=tz)
+    end = datetime(year + 1, 1, 1, tzinfo=tz) if month == 12 else datetime(year, month + 1, 1, tzinfo=tz)
+    return start, end
 
-    start_date = datetime(year, month, 1)
-    if month < 12:
-        end_date = datetime(year, month + 1, 1)
-    else:
-        end_date = datetime(year + 1, 1, 1)
-
-    print(f"DEBUG: Querying revenue for {property_id} from {start_date} to {end_date}")
-
-    # SQL Simulation (This would be executed against the actual DB)
-    query = """
-        SELECT SUM(total_amount) as total
-        FROM reservations
-        WHERE property_id = $1
-        AND tenant_id = $2
-        AND check_in_date >= $3
-        AND check_in_date < $4
-    """
-
-    # In production this query executes against a database session.
-    # result = await db.fetch_val(query, property_id, tenant_id, start_date, end_date)
-    # return result or Decimal('0')
-
-    return Decimal('0') # Placeholder for now until DB connection is finalized
 
 class RevenueUnavailableError(Exception):
     """Raised when revenue cannot be read from the database."""
@@ -55,9 +37,12 @@ def to_money(amount) -> str:
     return str(Decimal(amount or 0).quantize(CENTS, rounding=ROUND_HALF_UP))
 
 
-async def calculate_total_revenue(property_id: str, tenant_id: str) -> Dict[str, Any]:
+async def calculate_total_revenue(
+    property_id: str, tenant_id: str, year: Optional[int] = None, month: Optional[int] = None
+) -> Dict[str, Any]:
     """
-    Aggregates revenue from database.
+    Aggregates revenue from database: all-time, or for one calendar month
+    (in the property's timezone) when year and month are given.
 
     Raises RevenueUnavailableError instead of returning placeholder figures:
     showing made-up numbers to a client is worse than showing an error.
@@ -75,10 +60,15 @@ async def calculate_total_revenue(property_id: str, tenant_id: str) -> Dict[str,
 
             # Property IDs are only unique per tenant: check ownership first
             owned = await session.execute(
-                text("SELECT 1 FROM properties WHERE id = :property_id AND tenant_id = :tenant_id"),
+                text("SELECT timezone FROM properties WHERE id = :property_id AND tenant_id = :tenant_id"),
                 {"property_id": property_id, "tenant_id": tenant_id},
             )
-            property_found = owned.first() is not None
+            property_row = owned.first()
+            property_found = property_row is not None
+
+            start = end = None
+            if property_found and year and month:
+                start, end = month_bounds(year, month, property_row.timezone)
 
             query = text("""
                 SELECT
@@ -87,12 +77,16 @@ async def calculate_total_revenue(property_id: str, tenant_id: str) -> Dict[str,
                     COUNT(*) as reservation_count
                 FROM reservations
                 WHERE property_id = :property_id AND tenant_id = :tenant_id
+                  AND (CAST(:start AS timestamptz) IS NULL OR check_in_date >= :start)
+                  AND (CAST(:end AS timestamptz) IS NULL OR check_in_date < :end)
                 GROUP BY currency
             """)
 
             result = await session.execute(query, {
                 "property_id": property_id,
-                "tenant_id": tenant_id
+                "tenant_id": tenant_id,
+                "start": start,
+                "end": end,
             })
             rows = result.fetchall()
     except Exception as e:
