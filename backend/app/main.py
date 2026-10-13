@@ -100,6 +100,11 @@ async def lifespan(app: FastAPI):
         logger.error(f"❌ Supabase connection pool initialization failed: {e}")
         # Continue startup - fallback to direct connections
 
+    # Initialize the SQLAlchemy pool used by revenue reporting (once per process)
+    from .core.database_pool import db_pool
+
+    await db_pool.initialize()
+
     # Initialize Redis connection with timeout
     try:
         await redis_client.initialize()
@@ -126,6 +131,11 @@ async def lifespan(app: FastAPI):
     # Shutdown async processor
     await async_processor.shutdown()
     logger.info("Async processor shutdown completed")
+
+    try:
+        await db_pool.close()
+    except Exception as e:
+        logger.warning(f"⚠️ Error closing database pool: {e}")
 
     # Close connection pool
     try:
