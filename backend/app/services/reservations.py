@@ -1,17 +1,19 @@
 from datetime import datetime
 from decimal import Decimal
 from typing import Dict, Any, List
+import pytz
 
-async def calculate_monthly_revenue(property_id: str, month: int, year: int, db_session=None) -> Decimal:
+async def calculate_monthly_revenue(property_id: str, month: int, year: int, db_session=None, timezone: str = 'UTC') -> Decimal:
     """
     Calculates revenue for a specific month.
     """
+    tz = pytz.timezone(timezone)
 
-    start_date = datetime(year, month, 1)
+    start_date = tz.localize(datetime(year, month, 1)).astimezone(pytz.utc)
     if month < 12:
-        end_date = datetime(year, month + 1, 1)
+        end_date = tz.localize(datetime(year, month + 1, 1)).astimezone(pytz.utc)
     else:
-        end_date = datetime(year + 1, 1, 1)
+        end_date = tz.localize(datetime(year + 1, 1, 1)).astimezone(pytz.utc)
         
     print(f"DEBUG: Querying revenue for {property_id} from {start_date} to {end_date}")
 
