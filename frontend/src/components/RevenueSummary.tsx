@@ -22,6 +22,8 @@ export const RevenueSummary: React.FC<RevenueSummaryProps> = ({ propertyId, year
 
     useEffect(() => {
         if (!propertyId) return;
+        // Ignore responses that arrive after the user picked another property/month
+        let cancelled = false;
         const fetchRevenue = async () => {
             setLoading(true);
             setError('');
@@ -33,16 +35,19 @@ export const RevenueSummary: React.FC<RevenueSummaryProps> = ({ propertyId, year
                     month,
                     timestamp: Date.now()
                 });
-                setData(response);
+                if (!cancelled) setData(response);
             } catch (err) {
-                setError('Failed to load revenue data');
+                if (!cancelled) setError('Failed to load revenue data');
                 console.error(err);
             } finally {
-                setLoading(false);
+                if (!cancelled) setLoading(false);
             }
         };
 
         fetchRevenue();
+        return () => {
+            cancelled = true;
+        };
     }, [propertyId, year, month]);
 
     if (loading) {

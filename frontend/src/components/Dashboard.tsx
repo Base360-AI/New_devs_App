@@ -11,6 +11,8 @@ const Dashboard: React.FC = () => {
   // Only the signed-in tenant's properties (property IDs repeat across tenants)
   const [properties, setProperties] = useState<PropertyOption[]>([]);
   const [selectedProperty, setSelectedProperty] = useState('');
+  const [propertiesError, setPropertiesError] = useState('');
+  const [propertiesLoaded, setPropertiesLoaded] = useState(false);
   // "YYYY-MM" from the month picker; empty means all-time
   const [selectedMonth, setSelectedMonth] = useState('');
 
@@ -20,7 +22,11 @@ const Dashboard: React.FC = () => {
         setProperties(list);
         setSelectedProperty(list[0]?.id ?? '');
       })
-      .catch((err) => console.error('Failed to load properties', err));
+      .catch((err) => {
+        console.error('Failed to load properties', err);
+        setPropertiesError('Failed to load your properties');
+      })
+      .finally(() => setPropertiesLoaded(true));
   }, []);
 
   const [year, month] = selectedMonth ? selectedMonth.split('-').map(Number) : [undefined, undefined];
@@ -72,6 +78,12 @@ const Dashboard: React.FC = () => {
           </div>
 
           <div className="space-y-6">
+            {propertiesError && (
+              <div className="p-4 text-red-500 bg-red-50 rounded-lg">{propertiesError}</div>
+            )}
+            {propertiesLoaded && !propertiesError && properties.length === 0 && (
+              <div className="p-4 text-gray-500 bg-gray-50 rounded-lg">No properties found for your account.</div>
+            )}
             {selectedProperty && (
               <RevenueSummary propertyId={selectedProperty} year={year} month={month} />
             )}
