@@ -108,13 +108,13 @@ async def authenticate_request(
             # First try to decode as a custom JWT token.
             try:
                 payload = jwt.decode(
-                    token, 
-                    settings.secret_key, 
+                    token,
+                    settings.secret_key,
                     algorithms=["HS256"],
                     audience="authenticated"  # Accept tokens with aud: "authenticated"
                 )
                 logger.info(f"AUTH: Successfully decoded custom JWT token for {payload.get('email')}")
-                
+
                 # Create a mock user object from JWT payload
                 class MockUser:
                     def __init__(self, payload):
@@ -123,14 +123,14 @@ async def authenticate_request(
                         self.app_metadata = payload.get('app_metadata', {})
                         self.user_metadata = payload.get('user_metadata', {})
                         self.raw_app_metadata = payload.get('app_metadata', {})
-                        
+
                 user = MockUser(payload)
-                
+
             except JWTError:
                 # If custom JWT fails, try Supabase auth
                 response = supabase.auth.get_user(token)
                 user = response.user
-                
+
         except Exception as e:
             # Malformed or invalid token (e.g., wrong number of segments)
             logger.warning(f"AUTH: Token verification failed (hash={token_hash}): {e.__class__.__name__}")
@@ -252,15 +252,17 @@ async def authenticate_request(
         logger.info(f"==================== TENANT ID EXTRACTION ====================")
         logger.info(f"User: {user.email} (ID: {user.id})")
 
-        # Use TenantResolver for comprehensive tenant resolution
-        tenant_id = await TenantResolver.resolve_tenant_id(token=token, user_id=user.id, user_email=user.email)
-
-        # If we found a tenant_id and it's not in the user's metadata, update it for next time
+        # Prefer the tenant from the verified token's app_metadata (set at login);
+        # fall back to the resolver's email mapping.
         current_tenant_in_metadata = None
         if hasattr(user, "raw_app_metadata") and user.raw_app_metadata:
             current_tenant_in_metadata = user.raw_app_metadata.get("tenant_id")
         elif hasattr(user, "app_metadata") and user.app_metadata:
             current_tenant_in_metadata = user.app_metadata.get("tenant_id")
+
+        tenant_id = current_tenant_in_metadata or await TenantResolver.resolve_tenant_id(
+            token=token, user_id=user.id, user_email=user.email
+        )
 
         if tenant_id and current_tenant_in_metadata != tenant_id:
             logger.info(f"Updating user metadata with tenant_id for future requests...")
@@ -358,24 +360,24 @@ def require_permission(section: str, action: str):
 
 def require_any_permission(*permissions):
     """Dependency to require any of the specified permissions (OR logic)
-    
+
     Args:
         *permissions: List of tuples (section, action) representing permissions
-    
+
     Example:
         require_any_permission(
             ("guest_portal", "read"),
-            ("lockbox", "create"), 
+            ("lockbox", "create"),
             ("internal_keys", "create")
         )
     """
     def permission_checker(user: AuthenticatedUser = Depends(authenticate_request)):
         # Check if user has any of the required permissions
         has_any_permission = any(
-            has_permission(user, section, action) 
+            has_permission(user, section, action)
             for section, action in permissions
         )
-        
+
         if not has_any_permission:
             permission_strings = [f"{section}.{action}" for section, action in permissions]
             logger.warning(
@@ -386,14 +388,14 @@ def require_any_permission(*permissions):
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Insufficient permissions: requires any of {permission_strings}",
             )
-        
+
         # Log which permission was matched for debugging
         matched_permissions = [
             f"{section}.{action}" for section, action in permissions
             if has_permission(user, section, action)
         ]
         logger.info(f"User {user.email} granted access via permissions: {matched_permissions}")
-        
+
         return user
 
     return permission_checker
@@ -505,7 +507,7 @@ async def verify_token_ws(token: str) -> Optional[AuthenticatedUser]:
             else:
                 # Keep user's explicitly assigned cities even if no properties exist
                 logger.debug(f"WS_AUTH: Admin user, keeping assigned cities (no properties found): {user_cities}")
-        
+
         logger.info(f"WS_AUTH: Final user cities after processing: {user_cities}")
 
         # Use the comprehensive tenant resolver (same as regular auth)
