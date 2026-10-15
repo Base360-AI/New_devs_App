@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+
+# Node
+node_modules/
+
+# Env
+.env.local
+.env.*.local
+
+# OS / editor
+.DS_Store
+*.log
+vite.config.ts.timestamp-*.mjs
+
+# Build output
+frontend/dist/
+
+# Local env (see frontend/.env.example)
+.env

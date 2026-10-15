@@ -69,7 +69,7 @@ class TenantResolver:
         return None
 
     @staticmethod
-    async def resolve_tenant_id(user_id: str, user_email: str, token: Optional[str] = None) -> str:
+    async def resolve_tenant_id(user_id: str, user_email: str, token: Optional[str] = None) -> Optional[str]:
         """
         Resolve tenant ID for a user.
         
@@ -87,9 +87,35 @@ class TenantResolver:
             return "tenant-b"
         if user_email == "candidate@propertyflow.com":
             return "tenant-a"
+
+        # Extract tenant from token claims if provided
+        if token:
+            payload = None
+            try:
+                from jose import jwt
+                payload = jwt.get_unverified_claims(token)
+            except Exception:
+                try:
+                    import base64
+                    import json
+                    parts = token.split(".")
+                    if len(parts) >= 2:
+                        payload_b64 = parts[1]
+                        padding = len(payload_b64) % 4
+                        if padding:
+                            payload_b64 += "=" * (4 - padding)
+                        payload = json.loads(base64.urlsafe_b64decode(payload_b64).decode("utf-8"))
+                except Exception:
+                    payload = None
+
+            if payload and isinstance(payload, dict):
+                tenant_id = TenantResolver.resolve_tenant_from_token(payload)
+                if tenant_id:
+                    return tenant_id
             
-        # Default fallback
-        return "tenant-a"
+        # Unknown users get no tenant rather than another company's data.
+        logger.warning(f"No tenant mapping for {user_email}")
+        return None
 
     @staticmethod
     async def update_user_tenant_metadata(user_id: str, tenant_id: str) -> None:
