@@ -5,21 +5,28 @@ from app.core.auth import authenticate_request as get_current_user
 
 router = APIRouter()
 
+
 @router.get("/dashboard/summary")
 async def get_dashboard_summary(
     property_id: str,
-    current_user: dict = Depends(get_current_user)
+    current_user: Any = Depends(get_current_user)
 ) -> Dict[str, Any]:
-    
-    tenant_id = getattr(current_user, "tenant_id", "default_tenant") or "default_tenant"
-    
-    revenue_data = await get_revenue_summary(property_id, tenant_id)
-    
-    total_revenue_float = float(revenue_data['total'])
-    
+    tenant_id = getattr(current_user, "tenant_id", None)
+    if not tenant_id:
+        raise HTTPException(status_code=403, detail="No tenant assigned")
+
+    try:
+        revenue_data = await get_revenue_summary(property_id, tenant_id)
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=503, detail="Revenue data temporarily unavailable")
+
     return {
         "property_id": revenue_data['property_id'],
-        "total_revenue": total_revenue_float,
+        "total_revenue": float(revenue_data['total']),
         "currency": revenue_data['currency'],
+        "tenant_id": tenant_id,
         "reservations_count": revenue_data['count']
     }
+
