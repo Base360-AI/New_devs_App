@@ -11,7 +11,6 @@
 
 import { supabase } from './supabase';
 import { sessionManager } from '../utils/sessionManager';
-import { withRetry, handleApiError, classifyError } from '../utils/apiErrorHandler';
 
 // Get backend URL with fallback for misconfigured production environments
 const getBackendUrl = () => {
@@ -74,7 +73,7 @@ export class SecureAPIClient {
   private interceptDirectQueries() {
     if (import.meta.env.DEV) {
       const ENFORCE = (import.meta.env as any).VITE_ENFORCE_SECURE_API === 'true';
-      const originalFrom = supabase.from;
+      const originalFrom = (supabase as any).from;
       // Temporary dev allowlist for legacy direct queries while migrating to SecureAPI
       const DEV_ALLOWLIST = new Set([
         'user_permissions',
@@ -84,7 +83,7 @@ export class SecureAPIClient {
         'landlord_details'
       ]);
 
-      supabase.from = (table: string) => {
+      (supabase as any).from = (table: string) => {
         const stack = new Error().stack || '';
         const violation = `SECURITY VIOLATION: Direct Supabase query to table '${table}'`;
 
@@ -264,7 +263,7 @@ export class SecureAPIClient {
     let cleared = 0;
     const keysToDelete: string[] = [];
 
-    for (const [key, value] of this.requestCache.entries()) {
+    for (const [key] of this.requestCache.entries()) {
       if (key.includes(endpointPattern)) {
         keysToDelete.push(key);
         cleared++;
@@ -277,7 +276,7 @@ export class SecureAPIClient {
 
     // Also clear pending requests
     const pendingKeysToDelete: string[] = [];
-    for (const [key, promise] of this.pendingRequests.entries()) {
+    for (const [key] of this.pendingRequests.entries()) {
       if (key.includes(endpointPattern)) {
         pendingKeysToDelete.push(key);
       }
@@ -405,10 +404,6 @@ export class SecureAPIClient {
       return true; // Cache all other endpoints normally
     }
 
-    // Check if result looks valid for cleaning data
-    const items = data?.items || data?.data || [];
-    const total = data?.total || 0;
-
     // Always cache properly structured responses, even if empty
     // Empty results can be legitimate for users without tenant access or specific date ranges
     if (data && typeof data === 'object' && (data.hasOwnProperty('items') || data.hasOwnProperty('data') || data.hasOwnProperty('total'))) {
@@ -437,10 +432,6 @@ export class SecureAPIClient {
     // during rapid tab switching. The 3-second invalidation was causing cache thrashing.
     const CLEANING_CACHE_TTL = 30000; // 30 seconds instead of 3 seconds
 
-    // For cleaning endpoints, use extended cache time but validate content
-    const items = cachedData?.items || cachedData?.data || [];
-    const total = cachedData?.total || 0;
-
     // Primary validation: check cache age with more reasonable timeout
     if (cacheAge > CLEANING_CACHE_TTL) {
       return false;
@@ -464,10 +455,9 @@ export class SecureAPIClient {
   }
 
   /**
-   * Wait for a valid Supabase session (with timeout) so API calls don't race login.
+   * Wait for a local auth session so API calls do not race login.
    */
-  private async waitForSession(timeoutMs: number = 7000): Promise<import('@supabase/supabase-js').Session | null> {
-    // Helper to read token from Supabase storage as last resort
+  private async waitForSession(timeoutMs: number = 7000): Promise<{ access_token: string } | null> {
     const getTokenFromStorage = (): string | null => {
       try {
         if (typeof localStorage === 'undefined') return null;
@@ -490,37 +480,34 @@ export class SecureAPIClient {
       return current.data.session?.access_token || getTokenFromStorage();
     };
 
-    // Fast path
     const initial = await supabase.auth.getSession();
-    if (initial.data.session?.access_token) return initial.data.session;
+    if (initial.data.session?.access_token) {
+      return { access_token: initial.data.session.access_token };
+    }
     const storageToken = getTokenFromStorage();
     if (storageToken) {
-      // Construct a minimal session object shape with access_token
-      return { access_token: storageToken } as any;
+      return { access_token: storageToken };
     }
 
-    // Listen + poll concurrently
-    let unsubscribe: (() => void) | null = null;
     let resolved = false;
-    const sessionPromise = new Promise<import('@supabase/supabase-js').Session | null>((resolve) => {
-      const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+    let unsubscribe: () => void = () => {};
+    const sessionPromise = new Promise<{ access_token: string } | null>((resolve) => {
+      const listener = supabase.auth.onAuthStateChange((_event, session) => {
         if (!resolved && session?.access_token) {
           resolved = true;
-          if (unsubscribe) unsubscribe();
-          resolve(session);
+          resolve({ access_token: session.access_token });
         }
-      });
-      unsubscribe = () => data.subscription.unsubscribe();
+      }) as { data: { subscription: { unsubscribe: () => void } } };
+      unsubscribe = () => listener.data.subscription.unsubscribe();
     });
 
-    const pollingPromise = new Promise<import('@supabase/supabase-js').Session | null>(async (resolve) => {
+    const pollingPromise = new Promise<{ access_token: string } | null>(async (resolve) => {
       const start = Date.now();
       while (Date.now() - start < timeoutMs) {
         const token = await nowHasToken();
         if (token) {
           resolved = true;
-          if (unsubscribe) unsubscribe();
-          resolve({ access_token: token } as any);
+          resolve({ access_token: token });
           return;
         }
         await new Promise(r => setTimeout(r, 200));
@@ -530,7 +517,7 @@ export class SecureAPIClient {
 
     const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs));
     const result = await Promise.race([sessionPromise, pollingPromise, timeoutPromise]);
-    if (unsubscribe) unsubscribe();
+    unsubscribe();
     return result;
   }
 
@@ -1450,22 +1437,17 @@ export class SecureAPIClient {
 
   // ============= DASHBOARD API =============
   /**
-   * Get dashboard summary with optional simulation header
+   * Monthly revenue for one property owned by the logged-in tenant.
    */
-  async getDashboardSummary(propertyId: string, options?: { simulatedTenant?: string, timestamp?: number }) {
+  async getDashboardSummary(propertyId: string, options?: { month?: number; year?: number }) {
     const queryParams = new URLSearchParams({ property_id: propertyId });
-    if (options?.timestamp) {
-      queryParams.append('_t', options.timestamp.toString());
+    if (options?.month) {
+      queryParams.append('month', String(options.month));
     }
-
-    const requestOptions: RequestInit = {};
-    if (options?.simulatedTenant) {
-      requestOptions.headers = {
-        'X-Simulated-Tenant': options.simulatedTenant
-      };
+    if (options?.year) {
+      queryParams.append('year', String(options.year));
     }
-
-    return this.request<any>(`/api/v1/dashboard/summary?${queryParams}`, requestOptions);
+    return this.request<any>(`/api/v1/dashboard/summary?${queryParams}`);
   }
 
   async uploadCompanyLogo(logo_url: string) {
