@@ -44,7 +44,7 @@ services:
       # - pgdata:/var/lib/postgresql/data
 
   redis:
-    image: redis:alpine
+    image: redis:7-alpine
     ports:
       - "6380:6379" # Maps internal 6379 to host 6380 to avoid local conflicts
 

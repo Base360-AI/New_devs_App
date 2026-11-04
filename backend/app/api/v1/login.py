@@ -47,8 +47,9 @@ async def login(request: LoginRequest):
             user_data = {
                 "id": "user-sunset",
                 "email": "sunset@propertyflow.com",
+                "tenant_id": "tenant-a",
                 "app_metadata": {"role": "user", "tenant_id": "tenant-a"},
-                "user_metadata": {"name": "Sunset Properties Manager"},
+                "user_metadata": {"name": "Sunset Properties Manager", "tenant_id": "tenant-a"},
                 "aud": "authenticated",
                 "created_at": datetime.utcnow().isoformat(),
                 "exp": datetime.utcnow() + timedelta(hours=24)
@@ -77,8 +78,9 @@ async def login(request: LoginRequest):
             user_data = {
                 "id": "user-ocean",
                 "email": "ocean@propertyflow.com",
+                "tenant_id": "tenant-b",
                 "app_metadata": {"role": "user", "tenant_id": "tenant-b"},
-                "user_metadata": {"name": "Ocean Rentals Manager"},
+                "user_metadata": {"name": "Ocean Rentals Manager", "tenant_id": "tenant-b"},
                 "aud": "authenticated",
                 "created_at": datetime.utcnow().isoformat(),
                 "exp": datetime.utcnow() + timedelta(hours=24)

@@ -1,9 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { SecureAPI } from '../lib/secureApi';
+import { useAuth } from '../contexts/AuthContext.new';
 
 interface RevenueData {
     property_id: string;
+    tenant_id?: string;
     total_revenue: number;
+    formatted_total?: string;
     currency: string;
     reservations_count: number;
 }
@@ -12,14 +15,23 @@ interface RevenueSummaryProps {
     propertyId?: string;
     debugTenant?: string; 
     showRaw?: boolean;
+    month?: number;
+    year?: number;
 }
 
-export const RevenueSummary: React.FC<RevenueSummaryProps> = ({ propertyId = 'prop-001', debugTenant, showRaw }) => {
+export const RevenueSummary: React.FC<RevenueSummaryProps> = ({ 
+    propertyId = 'prop-001', 
+    debugTenant, 
+    showRaw,
+    month,
+    year 
+}) => {
+    const { user } = useAuth();
     const [data, setData] = useState<RevenueData | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
 
-    const activeTenant = debugTenant || 'candidate';
+    const activeTenant = debugTenant || user?.tenant_id || 'tenant-a';
 
     useEffect(() => {
         const fetchRevenue = async () => {
@@ -29,7 +41,9 @@ export const RevenueSummary: React.FC<RevenueSummaryProps> = ({ propertyId = 'pr
                 // We pass the simulatedTenant option which SecureAPI will attach as a header
                 const response = await SecureAPI.getDashboardSummary(propertyId, {
                     simulatedTenant: activeTenant,
-                    timestamp: Date.now()
+                    timestamp: Date.now(),
+                    month,
+                    year
                 });
                 setData(response);
             } catch (err) {
@@ -41,7 +55,7 @@ export const RevenueSummary: React.FC<RevenueSummaryProps> = ({ propertyId = 'pr
         };
 
         fetchRevenue();
-    }, [propertyId, activeTenant]);
+    }, [propertyId, activeTenant, month, year]);
 
     if (loading) {
         return (
