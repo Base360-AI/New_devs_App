@@ -1452,8 +1452,12 @@ export class SecureAPIClient {
   /**
    * Get dashboard summary with optional simulation header
    */
-  async getDashboardSummary(propertyId: string, options?: { simulatedTenant?: string, timestamp?: number }) {
+  async getDashboardSummary(propertyId: string, options?: { simulatedTenant?: string, timestamp?: number, month?: number, year?: number }) {
     const queryParams = new URLSearchParams({ property_id: propertyId });
+    if (options?.month !== undefined && options?.year !== undefined) {
+      queryParams.set('month', String(options.month));
+      queryParams.set('year', String(options.year));
+    }
     if (options?.timestamp) {
       queryParams.append('_t', options.timestamp.toString());
     }
