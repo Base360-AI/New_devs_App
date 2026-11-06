@@ -10,15 +10,17 @@ async def get_revenue_summary(property_id: str, tenant_id: str, month: int = Non
     """
     Fetches revenue summary, utilizing caching to improve performance.
     """
-    cache_key = f"revenue:{property_id}"
-    if month is not None:
-        # Monthly reports must not reuse all-time or another month's results.
-        cache_key = "revenue:monthly:" + json.dumps([tenant_id, property_id, year, month])
-    
+    if not tenant_id or not tenant_id.strip():
+        raise ValueError("Tenant is required for revenue summaries")
+    # Include tenant and reporting period; skip all legacy shared cache entries.
+    cache_key = "revenue:v2:" + json.dumps([tenant_id, property_id, year, month])
+
     # Try to get from cache
     cached = await redis_client.get(cache_key)
     if cached:
-        return json.loads(cached)
+        data = json.loads(cached)
+        if data.get("tenant_id") == tenant_id and data.get("property_id") == property_id:
+            return data
     
     # Revenue calculation is delegated to the reservation service.
     from app.services.reservations import calculate_total_revenue
@@ -26,6 +28,9 @@ async def get_revenue_summary(property_id: str, tenant_id: str, month: int = Non
     # Calculate revenue
     result = await calculate_total_revenue(property_id, tenant_id, month, year)
     
+    if result.get("tenant_id") != tenant_id or result.get("property_id") != property_id:
+        raise ValueError("Revenue ownership mismatch")
+
     # Cache the result for 5 minutes
     await redis_client.setex(cache_key, 300, json.dumps(result))
     
