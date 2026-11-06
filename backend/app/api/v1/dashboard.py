@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Dict, Any
+from decimal import Decimal, ROUND_HALF_UP
 from app.services.cache import get_revenue_summary
 from app.core.auth import authenticate_request as get_current_user
 
@@ -22,11 +23,14 @@ async def get_dashboard_summary(
     except Exception:
         raise HTTPException(status_code=503, detail="Revenue temporarily unavailable")
     
-    total_revenue_float = float(revenue_data['total'])
+    # Sum at full precision, then round once for the two-decimal USD report.
+    total_revenue = Decimal(revenue_data['total']).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    if total_revenue == 0:
+        total_revenue = abs(total_revenue)  # Avoid displaying negative zero.
     
     return {
         "property_id": revenue_data['property_id'],
-        "total_revenue": total_revenue_float,
+        "total_revenue": format(total_revenue, ".2f"),
         "currency": revenue_data['currency'],
         "reservations_count": revenue_data['count']
     }
