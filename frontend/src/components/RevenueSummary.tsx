@@ -10,11 +10,12 @@ interface RevenueData {
 
 interface RevenueSummaryProps {
     propertyId?: string;
+    reportMonth: string;
     debugTenant?: string; 
     showRaw?: boolean;
 }
 
-export const RevenueSummary: React.FC<RevenueSummaryProps> = ({ propertyId = 'prop-001', debugTenant, showRaw }) => {
+export const RevenueSummary: React.FC<RevenueSummaryProps> = ({ propertyId = 'prop-001', reportMonth, debugTenant, showRaw }) => {
     const [data, setData] = useState<RevenueData | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
@@ -25,13 +26,17 @@ export const RevenueSummary: React.FC<RevenueSummaryProps> = ({ propertyId = 'pr
         const fetchRevenue = async () => {
             setLoading(true);
             try {
+                const [year, month] = reportMonth.split('-').map(Number);
                 // Use SecureAPI to handle authentication automatically
                 // We pass the simulatedTenant option which SecureAPI will attach as a header
                 const response = await SecureAPI.getDashboardSummary(propertyId, {
                     simulatedTenant: activeTenant,
-                    timestamp: Date.now()
+                    timestamp: Date.now(),
+                    month,
+                    year
                 });
                 setData(response);
+                setError('');
             } catch (err) {
                 setError('Failed to load revenue data');
                 console.error(err);
@@ -41,7 +46,7 @@ export const RevenueSummary: React.FC<RevenueSummaryProps> = ({ propertyId = 'pr
         };
 
         fetchRevenue();
-    }, [propertyId, activeTenant]);
+    }, [propertyId, activeTenant, reportMonth]);
 
     if (loading) {
         return (

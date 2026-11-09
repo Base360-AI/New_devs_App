@@ -11,6 +11,10 @@ const PROPERTIES = [
 
 const Dashboard: React.FC = () => {
   const [selectedProperty, setSelectedProperty] = useState('prop-001');
+  const [selectedMonth, setSelectedMonth] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  });
 
   return (
     <div className="p-4 lg:p-6 min-h-full">
@@ -42,11 +46,24 @@ const Dashboard: React.FC = () => {
                   ))}
                 </select>
               </div>
+
+              <div className="flex flex-col sm:items-end">
+                <label htmlFor="revenue-month" className="text-xs font-medium text-gray-700 mb-1">Report Month</label>
+                <input
+                  id="revenue-month"
+                  type="month"
+                  value={selectedMonth}
+                  onChange={(e) => {
+                    if (e.target.value) setSelectedMonth(e.target.value);
+                  }}
+                  className="block w-full sm:w-auto min-w-[200px] px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+                />
+              </div>
             </div>
           </div>
 
           <div className="space-y-6">
-            <RevenueSummary propertyId={selectedProperty} />
+            <RevenueSummary propertyId={selectedProperty} reportMonth={selectedMonth} />
           </div>
         </div>
       </div>
