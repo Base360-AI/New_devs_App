@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 class Settings(BaseSettings):
     # Core settings
-    database_url: str = "postgresql://postgres:postgres@db:5432/propertyflow"
+    database_url: str = "postgresql+asyncpg://postgres:postgres@db:5432/propertyflow"
     redis_url: str = "redis://redis:6379/0"
     secret_key: str = "debug_challenge_secret"
     
