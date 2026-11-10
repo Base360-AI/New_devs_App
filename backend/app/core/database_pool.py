@@ -1,29 +1,44 @@
 import asyncio
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.pool import QueuePool
 import logging
 from ..config import settings
 
 logger = logging.getLogger(__name__)
 
+
+def _async_database_url(url: str) -> str:
+    """Use the asyncpg driver for a plain postgresql:// URL."""
+    for prefix in ("postgresql+asyncpg://", "postgresql://", "postgres://"):
+        if url.startswith(prefix):
+            return "postgresql+asyncpg://" + url[len(prefix):]
+    return url
+
+
 class DatabasePool:
     def __init__(self):
         self.engine = None
         self.session_factory = None
-        
+        self._init_lock = asyncio.Lock()
+
     async def initialize(self):
-        """Initialize database connection pool"""
+        """Initialize database connection pool (once per process)"""
+        if self.session_factory:
+            return
+        async with self._init_lock:
+            if self.session_factory:
+                return
+            await self._create_engine()
+
+    async def _create_engine(self):
         try:
-            # Create async engine with connection pooling
-            database_url = f"postgresql+asyncpg://{settings.supabase_db_user}:{settings.supabase_db_password}@{settings.supabase_db_host}:{settings.supabase_db_port}/{settings.supabase_db_name}"
-            
+            # The async engine uses AsyncAdaptedQueuePool by default.
+            # QueuePool is not valid for asyncio engines.
             self.engine = create_async_engine(
-                database_url,
-                poolclass=QueuePool,
-                pool_size=20,  # Number of connections to maintain
-                max_overflow=30,  # Additional connections when needed
+                _async_database_url(settings.database_url),
+                pool_size=settings.database_pool_size,
+                max_overflow=settings.database_max_overflow,
                 pool_pre_ping=True,  # Validate connections
-                pool_recycle=3600,  # Recycle connections every hour
+                pool_recycle=settings.database_pool_recycle,
                 echo=False  # Set to True for SQL debugging
             )
             
@@ -45,7 +60,7 @@ class DatabasePool:
         if self.engine:
             await self.engine.dispose()
     
-    async def get_session(self) -> AsyncSession:
+    def get_session(self) -> AsyncSession:
         """Get database session from pool"""
         if not self.session_factory:
             raise Exception("Database pool not initialized")

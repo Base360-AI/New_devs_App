@@ -1,25 +1,69 @@
-from fastapi import APIRouter, Depends, HTTPException
-from typing import Dict, Any
+from fastapi import APIRouter, Depends, HTTPException, Query
+from decimal import Decimal
+from typing import Dict, Any, List, Optional
 from app.services.cache import get_revenue_summary
+from app.services.reservations import MixedCurrencyError, list_tenant_properties
 from app.core.auth import authenticate_request as get_current_user
+from app.models.auth import AuthenticatedUser
 
 router = APIRouter()
+
+
+def _require_tenant(current_user: AuthenticatedUser) -> str:
+    """Return the user's tenant, or refuse when there is none."""
+    # A user without a tenant must not fall into a shared bucket that other
+    # tenant-less users could read; refuse instead.
+    tenant_id = getattr(current_user, "tenant_id", None)
+    if not tenant_id:
+        raise HTTPException(status_code=403, detail="No tenant associated with this account")
+    return tenant_id
+
+
+@router.get("/dashboard/properties")
+async def get_dashboard_properties(
+    current_user: AuthenticatedUser = Depends(get_current_user)
+) -> List[Dict[str, Any]]:
+    """Properties of the caller's tenant, for the dashboard selector."""
+    tenant_id = _require_tenant(current_user)
+
+    try:
+        return await list_tenant_properties(tenant_id)
+    except Exception:
+        raise HTTPException(status_code=503, detail="Property list temporarily unavailable")
+
 
 @router.get("/dashboard/summary")
 async def get_dashboard_summary(
     property_id: str,
-    current_user: dict = Depends(get_current_user)
+    month: Optional[int] = Query(None, ge=1, le=12, description="Calendar month in the property's timezone"),
+    year: Optional[int] = Query(None, ge=2000, le=2100),
+    current_user: AuthenticatedUser = Depends(get_current_user)
 ) -> Dict[str, Any]:
-    
-    tenant_id = getattr(current_user, "tenant_id", "default_tenant") or "default_tenant"
-    
-    revenue_data = await get_revenue_summary(property_id, tenant_id)
-    
-    total_revenue_float = float(revenue_data['total'])
-    
+
+    if (month is None) != (year is None):
+        raise HTTPException(status_code=422, detail="month and year must be given together")
+
+    tenant_id = _require_tenant(current_user)
+
+    try:
+        revenue_data = await get_revenue_summary(property_id, tenant_id, month, year)
+    except MixedCurrencyError:
+        raise HTTPException(
+            status_code=409,
+            detail="Reservations use more than one currency; totals cannot be added",
+        )
+    except Exception:
+        raise HTTPException(status_code=503, detail="Revenue data temporarily unavailable")
+
+    # 'total' is already rounded to cents as an exact decimal string.
+    # total_revenue keeps the numeric field the frontend reads; the string
+    # field carries the exact amount for consumers that must not use floats.
+    total_revenue = Decimal(revenue_data['total'])
+
     return {
         "property_id": revenue_data['property_id'],
-        "total_revenue": total_revenue_float,
+        "total_revenue": float(total_revenue),
+        "total_revenue_str": str(total_revenue),
         "currency": revenue_data['currency'],
         "reservations_count": revenue_data['count']
     }

@@ -1,48 +1,108 @@
+import logging
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Dict, Any, List
 
-async def calculate_monthly_revenue(property_id: str, month: int, year: int, db_session=None) -> Decimal:
-    """
-    Calculates revenue for a specific month.
-    """
+logger = logging.getLogger(__name__)
 
+CENT = Decimal("0.01")
+
+
+def _to_cents(value) -> Decimal:
+    """
+    Round a money amount to cents.
+
+    total_amount is NUMERIC(10,3), so sums can carry sub-cent digits.
+    Sum exactly in the database, then round once here with ROUND_HALF_UP
+    (never through float, which cannot represent most decimal values).
+    """
+    return Decimal(str(value if value is not None else 0)).quantize(CENT, rounding=ROUND_HALF_UP)
+
+
+DEFAULT_CURRENCY = "USD"
+
+
+class MixedCurrencyError(Exception):
+    """Reservations in different currencies cannot be summed into one total."""
+
+
+def _currency_of(row, property_id: str, tenant_id: str) -> str:
+    """Currency of the summed reservations; refuse to mix currencies."""
+    if row.currency_count and row.currency_count > 1:
+        raise MixedCurrencyError(
+            f"{property_id} (tenant: {tenant_id}) has reservations in {row.currency_count} currencies"
+        )
+    return row.currency or DEFAULT_CURRENCY
+
+async def calculate_monthly_revenue(property_id: str, tenant_id: str, month: int, year: int) -> Dict[str, Any]:
+    """
+    Calculates revenue for a calendar month in the property's own timezone.
+
+    check_in_date is stored in UTC. A booking at 2024-02-29 23:30 UTC is
+    2024-03-01 00:30 in Europe/Paris, so for a Paris property it belongs to
+    March. Month boundaries are therefore applied to the local check-in time.
+    """
+    # Naive local-time bounds; compared against check_in_date converted to the
+    # property's timezone (timestamptz AT TIME ZONE tz -> local timestamp).
     start_date = datetime(year, month, 1)
     if month < 12:
         end_date = datetime(year, month + 1, 1)
     else:
         end_date = datetime(year + 1, 1, 1)
-        
-    print(f"DEBUG: Querying revenue for {property_id} from {start_date} to {end_date}")
 
-    # SQL Simulation (This would be executed against the actual DB)
-    query = """
-        SELECT SUM(total_amount) as total
-        FROM reservations
-        WHERE property_id = $1
-        AND tenant_id = $2
-        AND check_in_date >= $3
-        AND check_in_date < $4
-    """
-    
-    # In production this query executes against a database session.
-    # result = await db.fetch_val(query, property_id, tenant_id, start_date, end_date)
-    # return result or Decimal('0')
-    
-    return Decimal('0') # Placeholder for now until DB connection is finalized
+    from app.core.database_pool import db_pool
+    from sqlalchemy import text
+
+    await db_pool.initialize()
+    if not db_pool.session_factory:
+        raise Exception("Database pool not available")
+
+    query = text("""
+        SELECT
+            COALESCE(SUM(r.total_amount), 0) AS total_revenue,
+            COUNT(r.id) AS reservation_count,
+            COUNT(DISTINCT r.currency) AS currency_count,
+            MIN(r.currency) AS currency
+        FROM reservations r
+        JOIN properties p
+          ON p.id = r.property_id AND p.tenant_id = r.tenant_id
+        WHERE r.property_id = :property_id
+          AND r.tenant_id = :tenant_id
+          AND (r.check_in_date AT TIME ZONE p.timezone) >= :start_date
+          AND (r.check_in_date AT TIME ZONE p.timezone) < :end_date
+    """)
+
+    try:
+        async with db_pool.get_session() as session:
+            result = await session.execute(query, {
+                "property_id": property_id,
+                "tenant_id": tenant_id,
+                "start_date": start_date,
+                "end_date": end_date,
+            })
+            row = result.fetchone()
+    except Exception as e:
+        logger.error(f"Database error for {property_id} (tenant: {tenant_id}, {year}-{month:02d}): {e}")
+        raise
+
+    return {
+        "property_id": property_id,
+        "tenant_id": tenant_id,
+        "total": str(_to_cents(row.total_revenue)),
+        "currency": _currency_of(row, property_id, tenant_id),
+        "count": row.reservation_count,
+    }
 
 async def calculate_total_revenue(property_id: str, tenant_id: str) -> Dict[str, Any]:
     """
     Aggregates revenue from database.
     """
     try:
-        # Import database pool
-        from app.core.database_pool import DatabasePool
-        
-        # Initialize pool if needed
-        db_pool = DatabasePool()
+        # Reuse the process-wide pool instead of creating one per request
+        from app.core.database_pool import db_pool
+
         await db_pool.initialize()
-        
+
         if db_pool.session_factory:
             async with db_pool.get_session() as session:
                 # Use SQLAlchemy text for raw SQL
@@ -52,7 +112,9 @@ async def calculate_total_revenue(property_id: str, tenant_id: str) -> Dict[str,
                     SELECT 
                         property_id,
                         SUM(total_amount) as total_revenue,
-                        COUNT(*) as reservation_count
+                        COUNT(*) as reservation_count,
+                        COUNT(DISTINCT currency) as currency_count,
+                        MIN(currency) as currency
                     FROM reservations 
                     WHERE property_id = :property_id AND tenant_id = :tenant_id
                     GROUP BY property_id
@@ -65,12 +127,12 @@ async def calculate_total_revenue(property_id: str, tenant_id: str) -> Dict[str,
                 row = result.fetchone()
                 
                 if row:
-                    total_revenue = Decimal(str(row.total_revenue))
+                    total_revenue = _to_cents(row.total_revenue)
                     return {
                         "property_id": property_id,
                         "tenant_id": tenant_id,
                         "total": str(total_revenue),
-                        "currency": "USD", 
+                        "currency": _currency_of(row, property_id, tenant_id),
                         "count": row.reservation_count
                     }
                 else:
@@ -79,31 +141,45 @@ async def calculate_total_revenue(property_id: str, tenant_id: str) -> Dict[str,
                         "property_id": property_id,
                         "tenant_id": tenant_id,
                         "total": "0.00",
-                        "currency": "USD",
+                        "currency": DEFAULT_CURRENCY,
                         "count": 0
                     }
         else:
             raise Exception("Database pool not available")
             
+    except MixedCurrencyError:
+        raise
     except Exception as e:
-        print(f"Database error for {property_id} (tenant: {tenant_id}): {e}")
-        
-        # Create property-specific mock data for testing when DB is unavailable
-        # This ensures each property shows different figures
-        mock_data = {
-            'prop-001': {'total': '1000.00', 'count': 3},
-            'prop-002': {'total': '4975.50', 'count': 4}, 
-            'prop-003': {'total': '6100.50', 'count': 2},
-            'prop-004': {'total': '1776.50', 'count': 4},
-            'prop-005': {'total': '3256.00', 'count': 3}
-        }
-        
-        mock_property_data = mock_data.get(property_id, {'total': '0.00', 'count': 0})
-        
-        return {
-            "property_id": property_id,
-            "tenant_id": tenant_id, 
-            "total": mock_property_data['total'],
-            "currency": "USD",
-            "count": mock_property_data['count']
-        }
+        # Never return made-up figures: a financial dashboard must fail loudly
+        # instead of showing numbers that belong to no tenant.
+        logger.error(f"Database error for {property_id} (tenant: {tenant_id}): {e}")
+        raise
+
+
+async def list_tenant_properties(tenant_id: str) -> List[Dict[str, Any]]:
+    """
+    Returns the properties that belong to one tenant.
+    """
+    from app.core.database_pool import db_pool
+    from sqlalchemy import text
+
+    await db_pool.initialize()
+    if not db_pool.session_factory:
+        raise Exception("Database pool not available")
+
+    query = text("""
+        SELECT id, name, timezone
+        FROM properties
+        WHERE tenant_id = :tenant_id
+        ORDER BY id
+    """)
+
+    try:
+        async with db_pool.get_session() as session:
+            result = await session.execute(query, {"tenant_id": tenant_id})
+            rows = result.fetchall()
+    except Exception as e:
+        logger.error(f"Database error listing properties (tenant: {tenant_id}): {e}")
+        raise
+
+    return [{"id": r.id, "name": r.name, "timezone": r.timezone} for r in rows]

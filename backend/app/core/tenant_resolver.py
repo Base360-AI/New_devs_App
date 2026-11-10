@@ -4,6 +4,8 @@ Minimal tenant resolver for authentication.
 from typing import Optional
 import logging
 
+from jose import jwt, JWTError
+
 logger = logging.getLogger(__name__)
 
 
@@ -69,17 +71,27 @@ class TenantResolver:
         return None
 
     @staticmethod
-    async def resolve_tenant_id(user_id: str, user_email: str, token: Optional[str] = None) -> str:
+    async def resolve_tenant_id(user_id: str, user_email: str, token: Optional[str] = None) -> Optional[str]:
         """
         Resolve tenant ID for a user.
-        
+
         Args:
             user_id: User ID
             user_email: User email
-            
+            token: JWT already verified by the caller; its tenant claim wins
+
         Returns:
-            Tenant ID
+            Tenant ID, or None when the user has no tenant
         """
+        # The signed token is the source of truth for the tenant.
+        if token:
+            try:
+                tenant_id = TenantResolver.resolve_tenant_from_token(jwt.get_unverified_claims(token))
+                if tenant_id:
+                    return tenant_id
+            except JWTError:
+                logger.warning(f"Could not read tenant claim from token for {user_email}")
+
         # Fallback mapping by known user email.
         if user_email == "sunset@propertyflow.com":
             return "tenant-a"
@@ -87,9 +99,11 @@ class TenantResolver:
             return "tenant-b"
         if user_email == "candidate@propertyflow.com":
             return "tenant-a"
-            
-        # Default fallback
-        return "tenant-a"
+
+        # No default: an unknown user must never be placed in a real tenant,
+        # or they would see that tenant's data.
+        logger.warning(f"No tenant found for user {user_email} ({user_id})")
+        return None
 
     @staticmethod
     async def update_user_tenant_metadata(user_id: str, tenant_id: str) -> None:
