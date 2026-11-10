@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
+from decimal import Decimal
 from typing import Dict, Any, Optional
 from app.services.cache import get_revenue_summary
 from app.core.auth import authenticate_request as get_current_user
@@ -28,11 +29,15 @@ async def get_dashboard_summary(
     except Exception:
         raise HTTPException(status_code=503, detail="Revenue data temporarily unavailable")
 
-    total_revenue_float = float(revenue_data['total'])
-    
+    # 'total' is already rounded to cents as an exact decimal string.
+    # total_revenue keeps the numeric field the frontend reads; the string
+    # field carries the exact amount for consumers that must not use floats.
+    total_revenue = Decimal(revenue_data['total'])
+
     return {
         "property_id": revenue_data['property_id'],
-        "total_revenue": total_revenue_float,
+        "total_revenue": float(total_revenue),
+        "total_revenue_str": str(total_revenue),
         "currency": revenue_data['currency'],
         "reservations_count": revenue_data['count']
     }

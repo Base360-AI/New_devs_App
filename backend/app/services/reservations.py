@@ -1,9 +1,22 @@
 import logging
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Dict, Any, List
 
 logger = logging.getLogger(__name__)
+
+CENT = Decimal("0.01")
+
+
+def _to_cents(value) -> Decimal:
+    """
+    Round a money amount to cents.
+
+    total_amount is NUMERIC(10,3), so sums can carry sub-cent digits.
+    Sum exactly in the database, then round once here with ROUND_HALF_UP
+    (never through float, which cannot represent most decimal values).
+    """
+    return Decimal(str(value if value is not None else 0)).quantize(CENT, rounding=ROUND_HALF_UP)
 
 async def calculate_monthly_revenue(property_id: str, tenant_id: str, month: int, year: int) -> Dict[str, Any]:
     """
@@ -57,7 +70,7 @@ async def calculate_monthly_revenue(property_id: str, tenant_id: str, month: int
     return {
         "property_id": property_id,
         "tenant_id": tenant_id,
-        "total": str(Decimal(str(row.total_revenue))),
+        "total": str(_to_cents(row.total_revenue)),
         "currency": "USD",
         "count": row.reservation_count,
     }
@@ -94,7 +107,7 @@ async def calculate_total_revenue(property_id: str, tenant_id: str) -> Dict[str,
                 row = result.fetchone()
                 
                 if row:
-                    total_revenue = Decimal(str(row.total_revenue))
+                    total_revenue = _to_cents(row.total_revenue)
                     return {
                         "property_id": property_id,
                         "tenant_id": tenant_id,
