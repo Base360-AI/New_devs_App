@@ -132,3 +132,32 @@ async def calculate_total_revenue(property_id: str, tenant_id: str) -> Dict[str,
         # instead of showing numbers that belong to no tenant.
         logger.error(f"Database error for {property_id} (tenant: {tenant_id}): {e}")
         raise
+
+
+async def list_tenant_properties(tenant_id: str) -> List[Dict[str, Any]]:
+    """
+    Returns the properties that belong to one tenant.
+    """
+    from app.core.database_pool import db_pool
+    from sqlalchemy import text
+
+    await db_pool.initialize()
+    if not db_pool.session_factory:
+        raise Exception("Database pool not available")
+
+    query = text("""
+        SELECT id, name, timezone
+        FROM properties
+        WHERE tenant_id = :tenant_id
+        ORDER BY id
+    """)
+
+    try:
+        async with db_pool.get_session() as session:
+            result = await session.execute(query, {"tenant_id": tenant_id})
+            rows = result.fetchall()
+    except Exception as e:
+        logger.error(f"Database error listing properties (tenant: {tenant_id}): {e}")
+        raise
+
+    return [{"id": r.id, "name": r.name, "timezone": r.timezone} for r in rows]

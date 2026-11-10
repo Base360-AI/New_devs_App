@@ -1,11 +1,36 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from decimal import Decimal
-from typing import Dict, Any, Optional
+from typing import Dict, Any, List, Optional
 from app.services.cache import get_revenue_summary
+from app.services.reservations import list_tenant_properties
 from app.core.auth import authenticate_request as get_current_user
 from app.models.auth import AuthenticatedUser
 
 router = APIRouter()
+
+
+def _require_tenant(current_user: AuthenticatedUser) -> str:
+    """Return the user's tenant, or refuse when there is none."""
+    # A user without a tenant must not fall into a shared bucket that other
+    # tenant-less users could read; refuse instead.
+    tenant_id = getattr(current_user, "tenant_id", None)
+    if not tenant_id:
+        raise HTTPException(status_code=403, detail="No tenant associated with this account")
+    return tenant_id
+
+
+@router.get("/dashboard/properties")
+async def get_dashboard_properties(
+    current_user: AuthenticatedUser = Depends(get_current_user)
+) -> List[Dict[str, Any]]:
+    """Properties of the caller's tenant, for the dashboard selector."""
+    tenant_id = _require_tenant(current_user)
+
+    try:
+        return await list_tenant_properties(tenant_id)
+    except Exception:
+        raise HTTPException(status_code=503, detail="Property list temporarily unavailable")
+
 
 @router.get("/dashboard/summary")
 async def get_dashboard_summary(
@@ -18,11 +43,7 @@ async def get_dashboard_summary(
     if (month is None) != (year is None):
         raise HTTPException(status_code=422, detail="month and year must be given together")
 
-    # A user without a tenant must not fall into a shared bucket that other
-    # tenant-less users could read; refuse instead.
-    tenant_id = getattr(current_user, "tenant_id", None)
-    if not tenant_id:
-        raise HTTPException(status_code=403, detail="No tenant associated with this account")
+    tenant_id = _require_tenant(current_user)
 
     try:
         revenue_data = await get_revenue_summary(property_id, tenant_id, month, year)
