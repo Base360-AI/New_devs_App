@@ -136,6 +136,14 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"⚠️ Error closing connection pool: {e}")
 
+    # Close the shared database pool used by the revenue services
+    try:
+        from .core.database_pool import db_pool
+
+        await db_pool.close()
+    except Exception as e:
+        logger.warning(f"⚠️ Error closing database pool: {e}")
+
 
 app = FastAPI(
     title="Auth Skeleton API",
