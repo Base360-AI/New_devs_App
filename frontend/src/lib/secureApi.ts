@@ -1452,8 +1452,16 @@ export class SecureAPIClient {
   /**
    * Get dashboard summary. The tenant always comes from the auth token.
    */
-  async getDashboardSummary(propertyId: string, options?: { timestamp?: number }) {
+  async getDashboardSummary(
+    propertyId: string,
+    options?: { month?: number; year?: number; timestamp?: number }
+  ) {
     const queryParams = new URLSearchParams({ property_id: propertyId });
+    // The backend needs both or neither; month is in the property's timezone.
+    if (options?.month && options?.year) {
+      queryParams.append('month', options.month.toString());
+      queryParams.append('year', options.year.toString());
+    }
     if (options?.timestamp) {
       queryParams.append('_t', options.timestamp.toString());
     }

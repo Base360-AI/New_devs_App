@@ -10,10 +10,18 @@ interface RevenueData {
 
 interface RevenueSummaryProps {
     propertyId: string;
+    // Calendar month (1-12) and year; both unset means all time.
+    month?: number;
+    year?: number;
     showRaw?: boolean;
 }
 
-export const RevenueSummary: React.FC<RevenueSummaryProps> = ({ propertyId, showRaw }) => {
+const periodLabel = (month?: number, year?: number) =>
+    month && year
+        ? new Date(year, month - 1, 1).toLocaleString(undefined, { month: 'long', year: 'numeric' })
+        : 'All time';
+
+export const RevenueSummary: React.FC<RevenueSummaryProps> = ({ propertyId, month, year, showRaw }) => {
     const [data, setData] = useState<RevenueData | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
@@ -26,6 +34,8 @@ export const RevenueSummary: React.FC<RevenueSummaryProps> = ({ propertyId, show
                 // SecureAPI attaches the auth token; the backend takes the
                 // tenant from that token only.
                 const response = await SecureAPI.getDashboardSummary(propertyId, {
+                    month,
+                    year,
                     timestamp: Date.now()
                 });
                 setData(response);
@@ -38,7 +48,7 @@ export const RevenueSummary: React.FC<RevenueSummaryProps> = ({ propertyId, show
         };
 
         fetchRevenue();
-    }, [propertyId]);
+    }, [propertyId, month, year]);
 
     if (loading) {
         return (
@@ -73,6 +83,7 @@ export const RevenueSummary: React.FC<RevenueSummaryProps> = ({ propertyId, show
                 <div className="flex items-center justify-between mb-6">
                     <div>
                         <h2 className="text-sm font-medium text-gray-500 uppercase tracking-wide">Total Revenue</h2>
+                        <p className="text-xs text-gray-400 mt-0.5">{periodLabel(month, year)}</p>
                         <div className="flex items-baseline gap-2 mt-1">
                             <span className="text-3xl font-bold text-gray-900 tracking-tight">
                                 {data.currency} {displayTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
