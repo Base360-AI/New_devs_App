@@ -18,6 +18,22 @@ def _to_cents(value) -> Decimal:
     """
     return Decimal(str(value if value is not None else 0)).quantize(CENT, rounding=ROUND_HALF_UP)
 
+
+DEFAULT_CURRENCY = "USD"
+
+
+class MixedCurrencyError(Exception):
+    """Reservations in different currencies cannot be summed into one total."""
+
+
+def _currency_of(row, property_id: str, tenant_id: str) -> str:
+    """Currency of the summed reservations; refuse to mix currencies."""
+    if row.currency_count and row.currency_count > 1:
+        raise MixedCurrencyError(
+            f"{property_id} (tenant: {tenant_id}) has reservations in {row.currency_count} currencies"
+        )
+    return row.currency or DEFAULT_CURRENCY
+
 async def calculate_monthly_revenue(property_id: str, tenant_id: str, month: int, year: int) -> Dict[str, Any]:
     """
     Calculates revenue for a calendar month in the property's own timezone.
@@ -44,7 +60,9 @@ async def calculate_monthly_revenue(property_id: str, tenant_id: str, month: int
     query = text("""
         SELECT
             COALESCE(SUM(r.total_amount), 0) AS total_revenue,
-            COUNT(r.id) AS reservation_count
+            COUNT(r.id) AS reservation_count,
+            COUNT(DISTINCT r.currency) AS currency_count,
+            MIN(r.currency) AS currency
         FROM reservations r
         JOIN properties p
           ON p.id = r.property_id AND p.tenant_id = r.tenant_id
@@ -71,7 +89,7 @@ async def calculate_monthly_revenue(property_id: str, tenant_id: str, month: int
         "property_id": property_id,
         "tenant_id": tenant_id,
         "total": str(_to_cents(row.total_revenue)),
-        "currency": "USD",
+        "currency": _currency_of(row, property_id, tenant_id),
         "count": row.reservation_count,
     }
 
@@ -94,7 +112,9 @@ async def calculate_total_revenue(property_id: str, tenant_id: str) -> Dict[str,
                     SELECT 
                         property_id,
                         SUM(total_amount) as total_revenue,
-                        COUNT(*) as reservation_count
+                        COUNT(*) as reservation_count,
+                        COUNT(DISTINCT currency) as currency_count,
+                        MIN(currency) as currency
                     FROM reservations 
                     WHERE property_id = :property_id AND tenant_id = :tenant_id
                     GROUP BY property_id
@@ -112,7 +132,7 @@ async def calculate_total_revenue(property_id: str, tenant_id: str) -> Dict[str,
                         "property_id": property_id,
                         "tenant_id": tenant_id,
                         "total": str(total_revenue),
-                        "currency": "USD", 
+                        "currency": _currency_of(row, property_id, tenant_id),
                         "count": row.reservation_count
                     }
                 else:
@@ -121,12 +141,14 @@ async def calculate_total_revenue(property_id: str, tenant_id: str) -> Dict[str,
                         "property_id": property_id,
                         "tenant_id": tenant_id,
                         "total": "0.00",
-                        "currency": "USD",
+                        "currency": DEFAULT_CURRENCY,
                         "count": 0
                     }
         else:
             raise Exception("Database pool not available")
             
+    except MixedCurrencyError:
+        raise
     except Exception as e:
         # Never return made-up figures: a financial dashboard must fail loudly
         # instead of showing numbers that belong to no tenant.

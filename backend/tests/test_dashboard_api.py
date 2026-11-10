@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 from app.api.v1 import dashboard
 from app.core.auth import authenticate_request
 from app.models.auth import AuthenticatedUser
+from app.services.reservations import MixedCurrencyError
 
 
 def _user(tenant_id):
@@ -118,6 +119,16 @@ def test_summary_returns_503_when_data_unavailable(make_client, monkeypatch):
     response = make_client("tenant-a").get("/api/v1/dashboard/summary", params={"property_id": "prop-001"})
 
     assert response.status_code == 503
+
+
+def test_summary_returns_409_for_mixed_currencies(make_client, monkeypatch):
+    async def mixed_summary(*args, **kwargs):
+        raise MixedCurrencyError("prop-002 has reservations in 2 currencies")
+
+    monkeypatch.setattr(dashboard, "get_revenue_summary", mixed_summary)
+    response = make_client("tenant-a").get("/api/v1/dashboard/summary", params={"property_id": "prop-002"})
+
+    assert response.status_code == 409
 
 
 def test_properties_lists_only_callers_tenant(make_client, monkeypatch):

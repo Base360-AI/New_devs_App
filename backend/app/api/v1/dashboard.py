@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from decimal import Decimal
 from typing import Dict, Any, List, Optional
 from app.services.cache import get_revenue_summary
-from app.services.reservations import list_tenant_properties
+from app.services.reservations import MixedCurrencyError, list_tenant_properties
 from app.core.auth import authenticate_request as get_current_user
 from app.models.auth import AuthenticatedUser
 
@@ -47,6 +47,11 @@ async def get_dashboard_summary(
 
     try:
         revenue_data = await get_revenue_summary(property_id, tenant_id, month, year)
+    except MixedCurrencyError:
+        raise HTTPException(
+            status_code=409,
+            detail="Reservations use more than one currency; totals cannot be added",
+        )
     except Exception:
         raise HTTPException(status_code=503, detail="Revenue data temporarily unavailable")
 

@@ -10,6 +10,7 @@ import pytest_asyncio
 
 from app.core.database_pool import db_pool
 from app.services.reservations import (
+    MixedCurrencyError,
     calculate_monthly_revenue,
     calculate_total_revenue,
     list_tenant_properties,
@@ -115,3 +116,33 @@ async def test_totals_always_have_two_decimals():
 async def test_property_list_is_scoped_to_tenant(tenant_id, expected):
     properties = await list_tenant_properties(tenant_id)
     assert [(p["id"], p["name"]) for p in properties] == expected
+
+
+async def test_currency_comes_from_stored_reservations():
+    total = await calculate_total_revenue("prop-002", "tenant-a")
+    monthly = await calculate_monthly_revenue("prop-002", "tenant-a", 3, 2024)
+    assert total["currency"] == "USD"
+    assert monthly["currency"] == "USD"
+
+
+async def _exec(sql, params=None):
+    from sqlalchemy import text
+
+    async with db_pool.get_session() as session:
+        await session.execute(text(sql), params or {})
+        await session.commit()
+
+
+async def test_mixed_currencies_are_not_summed():
+    # A EUR booking must not be added to USD bookings as if it were dollars.
+    await _exec(
+        "INSERT INTO reservations (id, property_id, tenant_id, check_in_date, check_out_date, total_amount, currency) "
+        "VALUES ('res-test-eur', 'prop-002', 'tenant-a', '2024-03-10 12:00:00+00', '2024-03-12 10:00:00+00', 500.000, 'EUR')"
+    )
+    try:
+        with pytest.raises(MixedCurrencyError):
+            await calculate_total_revenue("prop-002", "tenant-a")
+        with pytest.raises(MixedCurrencyError):
+            await calculate_monthly_revenue("prop-002", "tenant-a", 3, 2024)
+    finally:
+        await _exec("DELETE FROM reservations WHERE id = 'res-test-eur'")
