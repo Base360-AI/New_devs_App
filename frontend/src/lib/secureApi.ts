@@ -1,11 +1,11 @@
 /**
  * SECURE MULTI-TENANT API CLIENT
- * 
+ *
  * This module provides a centralized, secure API client that ensures ALL database
  * queries go through the backend with proper tenant isolation.
- * 
+ *
  * Always use this SecureAPI client instead.
- * 
+ *
  * @security This prevents cross-tenant data leakage by enforcing backend-only database access
  */
 
@@ -1181,7 +1181,7 @@ export class SecureAPIClient {
     });
   }
 
-  // Alias for compatibility  
+  // Alias for compatibility
   async deleteAppliance(propertyId: string, applianceId: string) {
     return this.deletePropertyAppliance(propertyId, applianceId);
   }
@@ -1466,6 +1466,12 @@ export class SecureAPIClient {
     }
 
     return this.request<any>(`/api/v1/dashboard/summary?${queryParams}`, requestOptions);
+  }
+
+  async getDashboardProperties() {
+    return this.request<Array<{ id: string; name: string; timezone: string }>>(
+        '/api/v1/dashboard/properties'
+    );
   }
 
   async uploadCompanyLogo(logo_url: string) {
