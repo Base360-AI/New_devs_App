@@ -1,5 +1,5 @@
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Dict, Any, List
 
 async def calculate_monthly_revenue(property_id: str, month: int, year: int, db_session=None) -> Decimal:
@@ -60,7 +60,9 @@ async def calculate_total_revenue(property_id: str, tenant_id: str) -> Dict[str,
         row = result.fetchone()
 
     if row:
-        total_revenue = Decimal(str(row.total_revenue))
+        total_revenue = Decimal(str(row.total_revenue)).quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_UP
+        )
         return {
             "property_id": property_id,
             "tenant_id": tenant_id,

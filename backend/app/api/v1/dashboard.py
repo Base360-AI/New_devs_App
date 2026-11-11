@@ -21,11 +21,9 @@ async def get_dashboard_summary(
         logger.exception(f"Revenue lookup failed for {property_id} (tenant: {tenant_id})")
         raise HTTPException(status_code=503, detail="Revenue data temporarily unavailable")
 
-    total_revenue_float = float(revenue_data['total'])
-
     return {
         "property_id": revenue_data['property_id'],
-        "total_revenue": total_revenue_float,
+        "total_revenue": revenue_data['total'],
         "currency": revenue_data['currency'],
         "reservations_count": revenue_data['count']
     }
