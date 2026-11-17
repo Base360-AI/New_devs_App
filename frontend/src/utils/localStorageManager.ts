@@ -14,6 +14,13 @@ import { storageRecoverySystem } from './StorageRecoverySystem';
 const STORAGE_VERSION_KEY = 'app_storage_version';
 const CURRENT_VERSION = '2.0.0'; // Keep at 2.0.0 to avoid forcing migration on existing users
 
+// Session key used by localAuthClient; wiping it logs the user out
+const AUTH_TOKEN_KEY = 'base360-auth-token';
+
+// Keys that must survive any storage cleanup or migration
+const isAuthKey = (key: string): boolean =>
+  key === AUTH_TOKEN_KEY || key.includes('supabase') || key.includes('sb-');
+
 interface StorageSchema {
   version: string;
   timestamp: number;
@@ -113,11 +120,11 @@ class LocalStorageManager {
       
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
-        if (key && (key.includes('supabase') || key.includes('sb-'))) {
+        if (key && isAuthKey(key)) {
           const value = localStorage.getItem(key);
           if (value) {
             preservedData[key] = value;
-            console.log(`Preserving Supabase key: ${key}`);
+            console.log(`Preserving auth key: ${key}`);
           }
         }
       }
@@ -239,14 +246,14 @@ class LocalStorageManager {
     
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
-      if (key && (key.includes('supabase') || key.includes('sb-'))) {
+      if (key && isAuthKey(key)) {
         const value = localStorage.getItem(key);
         if (value) {
           preservedData[key] = value;
         }
       }
     }
-    
+
     // Also preserve version key
     const versionValue = localStorage.getItem(STORAGE_VERSION_KEY);
     if (versionValue) {
@@ -271,7 +278,12 @@ class LocalStorageManager {
   private clearCorruptedStorage(): void {
     console.warn('Clearing corrupted localStorage');
     try {
+      // Never log the user out as a side effect of a storage cleanup
+      const authToken = localStorage.getItem(AUTH_TOKEN_KEY);
       localStorage.clear();
+      if (authToken) {
+        localStorage.setItem(AUTH_TOKEN_KEY, authToken);
+      }
       localStorage.setItem(STORAGE_VERSION_KEY, CURRENT_VERSION);
     } catch (error) {
       console.error('Failed to clear corrupted storage:', error);
