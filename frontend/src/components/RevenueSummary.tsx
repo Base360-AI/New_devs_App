@@ -9,8 +9,7 @@ interface RevenueData {
 }
 
 interface RevenueSummaryProps {
-    propertyId?: string;
-    debugTenant?: string; 
+    propertyId: string;
     showRaw?: boolean;
 }
 
@@ -22,34 +21,40 @@ const formatAmount = (amount: string): string => {
     return `${sign}${digits}.${fraction.padEnd(2, '0')}`;
 };
 
-export const RevenueSummary: React.FC<RevenueSummaryProps> = ({ propertyId = 'prop-001', debugTenant, showRaw }) => {
+export const RevenueSummary: React.FC<RevenueSummaryProps> = ({ propertyId, showRaw }) => {
     const [data, setData] = useState<RevenueData | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
 
-    const activeTenant = debugTenant || 'candidate';
-
     useEffect(() => {
+        let cancelled = false;
+
         const fetchRevenue = async () => {
             setLoading(true);
+            setError('');
             try {
-                // Use SecureAPI to handle authentication automatically
-                // We pass the simulatedTenant option which SecureAPI will attach as a header
+                // The tenant is resolved by the backend from the auth token
                 const response = await SecureAPI.getDashboardSummary(propertyId, {
-                    simulatedTenant: activeTenant,
                     timestamp: Date.now()
                 });
-                setData(response);
+                // Ignore responses for a property the user already switched away from
+                if (!cancelled) setData(response);
             } catch (err) {
-                setError('Failed to load revenue data');
+                if (!cancelled) {
+                    setData(null);
+                    setError('Failed to load revenue data');
+                }
                 console.error(err);
             } finally {
-                setLoading(false);
+                if (!cancelled) setLoading(false);
             }
         };
 
         fetchRevenue();
-    }, [propertyId, activeTenant]);
+        return () => {
+            cancelled = true;
+        };
+    }, [propertyId]);
 
     if (loading) {
         return (
@@ -85,6 +90,7 @@ export const RevenueSummary: React.FC<RevenueSummaryProps> = ({ propertyId = 'pr
                         <div className="flex items-baseline gap-2 mt-1">
                             <span className="text-3xl font-bold text-gray-900 tracking-tight">
                                 {data.currency} {formatAmount(data.total_revenue)}
+                            </span>
                         </div>
                     </div>
                 </div>
