@@ -1,29 +1,34 @@
 import json
+import logging
+from typing import Any, Dict, Optional
+
 import redis.asyncio as redis
-from typing import Dict, Any
-import os
 
-# Initialize Redis client (typically configured centrally).
-redis_client = redis.Redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"))
+from app.config import settings
 
-async def get_revenue_summary(property_id: str, tenant_id: str) -> Dict[str, Any]:
-    """
-    Fetches revenue summary, utilizing caching to improve performance.
-    """
-    cache_key = f"revenue:{property_id}"
-    
-    # Try to get from cache
-    cached = await redis_client.get(cache_key)
-    if cached:
-        return json.loads(cached)
-    
-    # Revenue calculation is delegated to the reservation service.
+logger = logging.getLogger(__name__)
+redis_client = redis.Redis.from_url(settings.redis_url, decode_responses=True, socket_timeout=0.5)
+
+
+async def get_revenue_summary(
+    property_id: str, tenant_id: str, month: Optional[str] = None
+) -> Dict[str, Any]:
+    # Scope every cached result to the authenticated tenant as well as property/month.
+    cache_key = f"revenue:v2:{tenant_id}:{property_id}:{month or 'latest'}"
+    try:
+        cached = await redis_client.get(cache_key)
+        if cached:
+            return json.loads(cached)
+    except Exception as exc:
+        logger.warning("Revenue cache read failed; using database: %s", type(exc).__name__)
+
     from app.services.reservations import calculate_total_revenue
-    
-    # Calculate revenue
-    result = await calculate_total_revenue(property_id, tenant_id)
-    
-    # Cache the result for 5 minutes
-    await redis_client.setex(cache_key, 300, json.dumps(result))
-    
+
+    result = await calculate_total_revenue(property_id, tenant_id, month)
+    if result.get("not_found"):
+        return result
+    try:
+        await redis_client.setex(cache_key, 300, json.dumps(result))
+    except Exception as exc:
+        logger.warning("Revenue cache write failed: %s", type(exc).__name__)
     return result
