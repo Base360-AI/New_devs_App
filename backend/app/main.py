@@ -4,7 +4,7 @@ import asyncio
 if sys.platform == 'win32':
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -15,6 +15,7 @@ import os
 import time
 
 from app.core.redis_client import redis_client
+from app.core.auth import require_admin
 from .api.v1 import (
     users_lightning,
     cities,
@@ -289,7 +290,7 @@ async def api_database_health():
 
 
 # Circuit breaker management endpoints
-@app.post("/api/v1/circuit-breaker/reset")
+@app.post("/api/v1/circuit-breaker/reset", dependencies=[Depends(require_admin)])
 async def reset_circuit_breaker():
     """Reset circuit breakers to allow operations to resume"""
     try:
@@ -363,7 +364,7 @@ async def circuit_breaker_status():
         return {"status": "error", "error": str(e), "timestamp": time.time()}
 
 
-@app.post("/api/v1/circuit-breaker/configure")
+@app.post("/api/v1/circuit-breaker/configure", dependencies=[Depends(require_admin)])
 async def configure_circuit_breaker(request: Request):
     """Configure circuit breaker thresholds and timeouts"""
     try:
@@ -414,7 +415,7 @@ async def fallback_status():
         return {"status": "error", "error": str(e), "timestamp": time.time()}
 
 
-@app.post("/api/v1/fallback/clear-cache")
+@app.post("/api/v1/fallback/clear-cache", dependencies=[Depends(require_admin)])
 async def clear_fallback_cache():
     """Clear the fallback service cache"""
     try:

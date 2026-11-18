@@ -1,6 +1,8 @@
 import asyncio
+from contextlib import asynccontextmanager
+from typing import AsyncIterator
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.pool import QueuePool
 import logging
 from ..config import settings
 
@@ -15,15 +17,14 @@ class DatabasePool:
         """Initialize database connection pool"""
         try:
             # Create async engine with connection pooling
-            database_url = f"postgresql+asyncpg://{settings.supabase_db_user}:{settings.supabase_db_password}@{settings.supabase_db_host}:{settings.supabase_db_port}/{settings.supabase_db_name}"
+            database_url = settings.database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
             
             self.engine = create_async_engine(
                 database_url,
-                poolclass=QueuePool,
-                pool_size=20,  # Number of connections to maintain
-                max_overflow=30,  # Additional connections when needed
+                pool_size=settings.database_pool_size,  # Number of connections to maintain
+                max_overflow=settings.database_max_overflow,  # Additional connections when needed
                 pool_pre_ping=True,  # Validate connections
-                pool_recycle=3600,  # Recycle connections every hour
+                pool_recycle=settings.database_pool_recycle,  # Recycle connections every hour
                 echo=False  # Set to True for SQL debugging
             )
             
@@ -45,11 +46,30 @@ class DatabasePool:
         if self.engine:
             await self.engine.dispose()
     
-    async def get_session(self) -> AsyncSession:
+    def get_session(self) -> AsyncSession:
         """Get database session from pool"""
         if not self.session_factory:
             raise Exception("Database pool not initialized")
         return self.session_factory()
+
+    @asynccontextmanager
+    async def tenant_session(self, tenant_id: str) -> AsyncIterator[AsyncSession]:
+        """Get a session whose queries are limited to one tenant by row level security"""
+        if not tenant_id:
+            raise ValueError("tenant_id is required for a tenant session")
+        if not self.session_factory:
+            await self.initialize()
+        if not self.session_factory:
+            raise Exception("Database pool not available")
+
+        async with self.session_factory() as session:
+            async with session.begin():
+                # is_local=true scopes the setting to this transaction only
+                await session.execute(
+                    text("SELECT set_config('app.current_tenant', :tenant_id, true)"),
+                    {"tenant_id": tenant_id}
+                )
+                yield session
 
 # Global database pool instance
 db_pool = DatabasePool()

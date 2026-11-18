@@ -31,6 +31,17 @@ CREATE TABLE reservations (
     FOREIGN KEY (property_id, tenant_id) REFERENCES properties(id, tenant_id)
 );
 
--- RLS Policies (Simulation)
+-- RLS Policies
+-- The backend connects as app_user (not a superuser, so RLS cannot be bypassed)
+-- and sets app.current_tenant for every transaction.
 ALTER TABLE properties ENABLE ROW LEVEL SECURITY;
 ALTER TABLE reservations ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY tenant_isolation_properties ON properties
+    USING (tenant_id = current_setting('app.current_tenant', true));
+
+CREATE POLICY tenant_isolation_reservations ON reservations
+    USING (tenant_id = current_setting('app.current_tenant', true));
+
+CREATE ROLE app_user LOGIN PASSWORD 'app_user';
+GRANT SELECT ON tenants, properties, reservations TO app_user;
