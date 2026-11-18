@@ -145,6 +145,12 @@ async def login(request: LoginRequest):
             
             # Resolve tenant ID
             tenant_id = await TenantResolver.resolve_tenant_id(user_id=user.id, user_email=user.email)
+            if not tenant_id and not is_admin:
+                logger.warning(f"[LOGIN] No tenant assigned to {email}")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="User is not assigned to a tenant"
+                )
             
             # Create JWT token
             user_data = {

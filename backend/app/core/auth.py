@@ -308,6 +308,17 @@ async def authenticate_request(
         )
 
 
+def require_admin(user: AuthenticatedUser = Depends(authenticate_request)) -> AuthenticatedUser:
+    """Dependency to require an admin user"""
+    if not user.is_admin:
+        logger.warning(f"Admin access denied for user {user.email}")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required",
+        )
+    return user
+
+
 def has_permission(user: AuthenticatedUser, section: str, action: str) -> bool:
     """Check if user has specific permission"""
     logger.info(f"Permission check for {user.email}: {section}.{action} - Is admin: {user.is_admin}")

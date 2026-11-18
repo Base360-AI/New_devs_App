@@ -1,16 +1,18 @@
 from fastapi import APIRouter, Depends, HTTPException
 from typing import List, Dict, Any
 from ...database import supabase
-from ...core.auth import authenticate_request, ADMIN_EMAILS
+from ...core.auth import authenticate_request, require_admin, ADMIN_EMAILS
 
 router = APIRouter()
 
 @router.get("/cities")
-async def get_available_cities():
+async def get_available_cities(
+    current_user = Depends(require_admin)
+):
     """
     Get all available cities from the properties table.
     Returns cities that have at least one active property.
-    This is a public endpoint that doesn't require authentication.
+    Covers properties of all tenants, so it is restricted to admins.
     """
     try:
         # Query to get distinct cities from properties table where status is active

@@ -159,6 +159,11 @@ async def get_user_departments_endpoint(
     user: AuthenticatedUser = Depends(authenticate_request)
 ):
     """Get departments for a specific user"""
+    if user_id != user.id and not user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not allowed to view another user's departments"
+        )
     try:
         departments = await get_user_departments(user_id)
         # Return just the department IDs for simplicity
