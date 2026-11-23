@@ -254,6 +254,11 @@ async def authenticate_request(
 
         # Use TenantResolver for comprehensive tenant resolution
         tenant_id = await TenantResolver.resolve_tenant_id(token=token, user_id=user.id, user_email=user.email)
+        if not tenant_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No active tenant membership",
+            )
 
         # If we found a tenant_id and it's not in the user's metadata, update it for next time
         current_tenant_in_metadata = None
@@ -511,6 +516,9 @@ async def verify_token_ws(token: str) -> Optional[AuthenticatedUser]:
         # Use the comprehensive tenant resolver (same as regular auth)
         logger.info(f"WS_AUTH: Resolving tenant for user {user.email}")
         tenant_id = await TenantResolver.resolve_tenant_id(token=token, user_id=user.id, user_email=user.email)
+        if not tenant_id:
+            logger.warning(f"WS_AUTH: User {user.email} has no active tenant membership")
+            return None
 
         auth_user = AuthenticatedUser(
             id=user.id,

@@ -18,7 +18,7 @@ pytz
 redis>=5.0.0
 requests
 sendgrid
-sqlalchemy>=2.0.0
+sqlalchemy[asyncio]>=2.0.0
 supabase
 tenacity>=8.0.0
 uvicorn[standard]

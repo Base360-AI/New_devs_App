@@ -86,7 +86,7 @@ class ProfileService {
 
       const response = await fetch(`${getApiBase()}/api/v1/profile/avatar`, {
         method: 'POST',
-        headers: { Authorization: (headers as any)['Authorization'] as string },
+        headers: { Authorization: headers.Authorization },
         body: formData,
       });
 
