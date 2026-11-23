@@ -69,27 +69,42 @@ class TenantResolver:
         return None
 
     @staticmethod
-    async def resolve_tenant_id(user_id: str, user_email: str, token: Optional[str] = None) -> str:
-        """
-        Resolve tenant ID for a user.
-        
-        Args:
-            user_id: User ID
-            user_email: User email
-            
-        Returns:
-            Tenant ID
-        """
-        # Fallback mapping by known user email.
-        if user_email == "sunset@propertyflow.com":
-            return "tenant-a"
-        if user_email == "ocean@propertyflow.com":
-            return "tenant-b"
-        if user_email == "candidate@propertyflow.com":
-            return "tenant-a"
-            
-        # Default fallback
-        return "tenant-a"
+    async def resolve_tenant_id(
+        user_id: str, user_email: str, token: Optional[str] = None
+    ) -> Optional[str]:
+        challenge_tenants = {
+            "sunset@propertyflow.com": "tenant-a",
+            "ocean@propertyflow.com": "tenant-b",
+            "candidate@propertyflow.com": "tenant-a",
+        }
+        if user_email in challenge_tenants:
+            return challenge_tenants[user_email]
+
+        try:
+            from app.database import supabase
+
+            response = (
+                supabase.service.table("user_tenants")
+                .select("tenant_id")
+                .eq("user_id", user_id)
+                .eq("is_active", True)
+                .execute()
+            )
+            tenant_ids = {
+                row.get("tenant_id")
+                for row in response.data or []
+                if row.get("tenant_id")
+            }
+            if len(tenant_ids) == 1:
+                return tenant_ids.pop()
+            if len(tenant_ids) > 1:
+                logger.warning(
+                    f"User {user_id} has multiple active tenant memberships"
+                )
+        except Exception as error:
+            logger.warning(f"Tenant membership lookup failed for {user_id}: {error}")
+
+        return None
 
     @staticmethod
     async def update_user_tenant_metadata(user_id: str, tenant_id: str) -> None:

@@ -1,7 +1,9 @@
 // API base URL utilities
 
+import { getBackendUrl } from '../utils/getBackendUrl';
+
 export const getApiBase = (): string => {
-  return import.meta.env.VITE_BACKEND_URL || '';
+  return getBackendUrl();
 };
 
 export const getApiUrl = (path: string): string => {

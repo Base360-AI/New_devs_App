@@ -145,7 +145,12 @@ async def login(request: LoginRequest):
             
             # Resolve tenant ID
             tenant_id = await TenantResolver.resolve_tenant_id(user_id=user.id, user_email=user.email)
-            
+            if not tenant_id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="No active tenant membership"
+                )
+
             # Create JWT token
             user_data = {
                 "id": user.id,
