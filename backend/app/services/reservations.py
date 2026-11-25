@@ -107,3 +107,37 @@ async def calculate_total_revenue(property_id: str, tenant_id: str) -> Dict[str,
             "currency": "USD",
             "count": mock_property_data['count']
         }
+
+async def get_properties_by_tenant(tenant_id: str) -> List[Dict[str, Any]]:
+    """
+    Fetches properties associated with a tenant.
+    """
+    try:
+        from app.core.database_pool import DatabasePool
+        
+        db_pool = DatabasePool()
+        await db_pool.initialize()
+        
+        if db_pool.session_factory:
+            async with db_pool.get_session() as session:
+                from sqlalchemy import text
+                
+                query = text("""
+                    SELECT DISTINCT id, name
+                    FROM properties
+                    WHERE tenant_id = :tenant_id
+                """)
+                
+                result = await session.execute(query, {"tenant_id": tenant_id})
+                properties = [{"property_id": row.id, "name": row.name} for row in result.fetchall()]
+                
+                return properties
+        else:
+            raise Exception("Database pool not available")
+            
+    except Exception as e:
+        print(f"Database error while fetching properties: {e}")
+        
+        # Return mock data for testing when DB is unavailable
+        return  [
+        ];

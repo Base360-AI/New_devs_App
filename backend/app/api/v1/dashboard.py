@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from typing import Dict, Any
-from app.services.cache import get_revenue_summary
+from app.services.cache import get_revenue_summary, get_tenant_properties
 from app.core.auth import authenticate_request as get_current_user
 
 router = APIRouter()
@@ -23,3 +23,18 @@ async def get_dashboard_summary(
         "currency": revenue_data['currency'],
         "reservations_count": revenue_data['count']
     }
+
+@router.get("/dashboard/properties")
+async def get_tenant_properties_endpoint(
+    current_user: dict = Depends(get_current_user)
+) -> Dict[str, Any]:
+    
+    tenant_id = getattr(current_user, "tenant_id", "default_tenant") or "default_tenant"
+    
+    properties = await get_tenant_properties(tenant_id)
+    
+    return {
+        "tenant_id": tenant_id,
+        "properties": properties
+    }
+

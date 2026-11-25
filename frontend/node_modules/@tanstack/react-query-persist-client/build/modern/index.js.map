@@ -1,1 +1,0 @@
-{"version":3,"sources":["../../src/index.ts"],"sourcesContent":["// Re-export core\nexport * from '@tanstack/query-persist-client-core'\n\nexport * from './PersistQueryClientProvider'\n"],"mappings":";AACA,cAAc;AAEd,cAAc;","names":[]}

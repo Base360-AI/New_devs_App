@@ -81,3 +81,9 @@ export interface AvatarUploadResponse {
   avatar_url: string;
   message: string;
 }
+
+
+export interface property {
+  property_id: string;
+  name: string;
+}

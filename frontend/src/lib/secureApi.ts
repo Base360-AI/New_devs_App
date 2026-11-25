@@ -1468,6 +1468,9 @@ export class SecureAPIClient {
     return this.request<any>(`/api/v1/dashboard/summary?${queryParams}`, requestOptions);
   }
 
+  async getTenantProperties() {
+      return this.request<any>(`/api/v1/dashboard/properties`);
+  }
   async uploadCompanyLogo(logo_url: string) {
     return this.request<any>('/api/v1/company-settings/logo', {
       method: 'POST',
@@ -2473,3 +2476,4 @@ if (import.meta.env.DEV) {
   (window as any).clearCleaningCache = () => SecureAPI.clearEndpointCache('secure/cleaning/reports');
   console.log('🔧 Debug utilities added: secureApiDiagnostics(), clearCleaningCache()');
 }
+

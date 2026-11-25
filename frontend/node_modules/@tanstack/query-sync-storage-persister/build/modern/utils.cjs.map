@@ -1,1 +1,0 @@
-{"version":3,"sources":["../../src/utils.ts"],"sourcesContent":["export function noop(): void\nexport function noop(): undefined\nexport function noop() {}\n"],"mappings":";;;;;;;;;;;;;;;;;;;;AAAA;AAAA;AAAA;AAAA;AAAA;AAEO,SAAS,OAAO;AAAC;","names":[]}
